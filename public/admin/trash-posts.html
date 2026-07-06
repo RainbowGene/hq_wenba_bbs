@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>已删提问回收站 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <div class="flex-grow-1 p-4">
+        <h3>已删提问回收站</h3>
+        <div class="btn-group mb-3">
+          <button
+            class="btn btn-outline-success btn-sm"
+            onclick="batchRestore()"
+          >
+            批量还原
+          </button>
+          <button
+            class="btn btn-outline-danger btn-sm"
+            onclick="batchPermanentDelete()"
+          >
+            永久删除
+          </button>
+        </div>
+        <table class="table table-bordered" id="trashTable">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="selectAll" /></th>
+              <th>ID</th>
+              <th>标题</th>
+              <th>发帖人</th>
+              <th>删除时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="paginationContainer"></div>
+      </div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      let currentPage = 1;
+      const pageSize = 15;
+
+      async function loadTrash(page = 1) {
+        currentPage = page;
+        const res = await api(
+          `/api/admin/trash/posts?page=${page}&size=${pageSize}`,
+        );
+        if (res.code !== 200) return alert(res.msg);
+        const { list, total } = res.data;
+        const tbody = document.querySelector("#trashTable tbody");
+        tbody.innerHTML =
+          list
+            .map(
+              (item) => `
+    <tr>
+      <td><input type="checkbox" value="${item.id}" class="rowCheck"></td>
+      <td>${item.id}</td>
+      <td>${item.title}</td>
+      <td>${item.nickname || item.username}</td>
+      <td>${item.deleted_at ? new Date(item.deleted_at).toLocaleString() : "-"}</td>
+      <td>
+        <button class="btn btn-sm btn-success" onclick="restore(${item.id})">还原</button>
+        <button class="btn btn-sm btn-danger" onclick="permanentDelete(${item.id})">永久删除</button>
+      </td>
+    </tr>
+  `,
+            )
+            .join("") ||
+          '<tr><td colspan="6" class="text-center">回收站为空</td></tr>';
+        renderPagination(
+          document.getElementById("paginationContainer"),
+          page,
+          total,
+          pageSize,
+          loadTrash,
+        );
+      }
+
+      function getSelectedIds() {
+        return [...document.querySelectorAll(".rowCheck:checked")].map((cb) =>
+          parseInt(cb.value),
+        );
+      }
+
+      async function batchRestore() {
+        const ids = getSelectedIds();
+        if (!ids.length) return alert("请选择");
+        await api("/api/admin/trash/posts/restore", {
+          method: "PUT",
+          body: JSON.stringify({ ids }),
+        });
+        loadTrash(currentPage);
+      }
+
+      async function batchPermanentDelete() {
+        const ids = getSelectedIds();
+        if (!ids.length) return alert("请选择");
+        if (!confirm("永久删除后无法恢复，确定吗？")) return;
+        await api("/api/admin/trash/posts/permanent", {
+          method: "DELETE",
+          body: JSON.stringify({ ids }),
+        });
+        loadTrash(currentPage);
+      }
+
+      async function restore(id) {
+        await api("/api/admin/trash/posts/restore", {
+          method: "PUT",
+          body: JSON.stringify({ ids: [id] }),
+        });
+        loadTrash(currentPage);
+      }
+
+      async function permanentDelete(id) {
+        if (!confirm("确定永久删除？")) return;
+        await api("/api/admin/trash/posts/permanent", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: [id] }),
+        });
+        loadTrash(currentPage);
+      }
+
+      document.getElementById("selectAll").onclick = function () {
+        document
+          .querySelectorAll(".rowCheck")
+          .forEach((cb) => (cb.checked = this.checked));
+      };
+
+      loadTrash();
+    </script>
+  </body>
+</html>

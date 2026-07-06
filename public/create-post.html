@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>发布提问 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+      <div class="container"><a class="navbar-brand" href="/">问吧</a></div>
+    </nav>
+    <div class="container mt-4">
+      <h3>发布新提问</h3>
+      <form id="createPostForm">
+        <div class="mb-2">
+          <label>选择分类</label>
+          <select
+            class="form-select"
+            name="category_id"
+            id="categorySelect"
+            required
+          ></select>
+        </div>
+        <div class="mb-2">
+          <label>标题</label>
+          <input type="text" class="form-control" name="title" required />
+        </div>
+        <div class="mb-2">
+          <label>详细内容</label>
+          <textarea
+            class="form-control"
+            name="content"
+            rows="6"
+            required
+          ></textarea>
+        </div>
+        <div class="mb-2">
+          <label>悬赏积分</label>
+          <select class="form-select" name="bounty" required>
+            <option value="50">50积分</option>
+            <option value="100">100积分</option>
+            <option value="200">200积分</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">提交提问</button>
+      </form>
+    </div>
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      // 加载分类二级
+      fetch("/api/public/categories")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.code === 200) {
+            const sel = document.getElementById("categorySelect");
+            d.data.forEach((cat) => {
+              if (cat.children.length > 0) {
+                const optgroup = document.createElement("optgroup");
+                optgroup.label = cat.name;
+                cat.children.forEach((sub) => {
+                  const opt = document.createElement("option");
+                  opt.value = sub.id;
+                  opt.textContent = sub.name;
+                  optgroup.appendChild(opt);
+                });
+                sel.appendChild(optgroup);
+              }
+            });
+          }
+        });
+      document
+        .getElementById("createPostForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          if (!getToken()) return alert("请先登录");
+          const data = Object.fromEntries(new FormData(e.target));
+          const res = await api("/api/posts", {
+            method: "POST",
+            body: JSON.stringify(data),
+          });
+          if (res.code === 200) {
+            alert("提问已提交，等待审核");
+            window.location.href = "/";
+          } else alert(res.msg);
+        });
+    </script>
+  </body>
+</html>

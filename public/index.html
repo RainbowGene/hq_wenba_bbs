@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>问吧 - 集团内网论坛</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/modal-alert.js"></script>
+    <script src="/js/common.js"></script>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+      <div class="container">
+        <a class="navbar-brand" href="/">问吧</a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#mainNav"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="mainNav">
+          <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+            <li class="nav-item">
+              <a class="nav-link active" href="/">首页</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/create-post.html">发布提问</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/feedback.html">反馈</a>
+            </li>
+          </ul>
+          <div class="d-flex" id="auth-buttons">
+            <!-- 动态 -->
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="container mt-3">
+      <!-- 分类筛选区 -->
+      <div class="row mb-3">
+        <div class="col-12" id="category-bar"></div>
+      </div>
+
+      <!-- 轮播图 -->
+      <div
+        id="carouselExample"
+        class="carousel slide mb-4"
+        data-bs-ride="carousel"
+      >
+        <div class="carousel-inner" id="carousel-inner"></div>
+        <button
+          class="carousel-control-prev"
+          type="button"
+          data-bs-target="#carouselExample"
+          data-bs-slide="prev"
+        >
+          <span class="carousel-control-prev-icon"></span>
+        </button>
+        <button
+          class="carousel-control-next"
+          type="button"
+          data-bs-target="#carouselExample"
+          data-bs-slide="next"
+        >
+          <span class="carousel-control-next-icon"></span>
+        </button>
+      </div>
+
+      <!-- 固定板块 Tab -->
+      <ul class="nav nav-tabs" id="boardTab" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link active"
+            id="announcement-tab"
+            data-bs-toggle="tab"
+            data-bs-target="#announcement"
+            type="button"
+            role="tab"
+          >
+            公告区
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link"
+            id="unsolved-tab"
+            data-bs-toggle="tab"
+            data-bs-target="#unsolved"
+            type="button"
+            role="tab"
+          >
+            待解决问题
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link"
+            id="recommended-tab"
+            data-bs-toggle="tab"
+            data-bs-target="#recommended"
+            type="button"
+            role="tab"
+          >
+            推荐帖子
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link"
+            id="latestReply-tab"
+            data-bs-toggle="tab"
+            data-bs-target="#latestReply"
+            type="button"
+            role="tab"
+          >
+            最新回复
+          </button>
+        </li>
+      </ul>
+      <div class="tab-content mt-2">
+        <div
+          class="tab-pane fade show active"
+          id="announcement"
+          role="tabpanel"
+        >
+          <div class="list-group" id="announcementList"></div>
+        </div>
+        <div class="tab-pane fade" id="unsolved" role="tabpanel">
+          <div class="list-group" id="unsolvedList"></div>
+        </div>
+        <div class="tab-pane fade" id="recommended" role="tabpanel">
+          <div class="list-group" id="recommendedList"></div>
+        </div>
+        <div class="tab-pane fade" id="latestReply" role="tabpanel">
+          <div class="list-group" id="latestReplyList"></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // ========== 登录状态 ==========
+      const token = getToken();
+      if (token) {
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
+        let adminLink = "";
+        if (user.role === "admin") {
+          adminLink =
+            '<a href="/admin/index.html" class="btn btn-outline-warning me-2">后台管理</a>';
+        }
+        document.getElementById("auth-buttons").innerHTML = `
+      <span class="text-white me-2 mt-2">${user.nickname || user.username}，积分：<span id="userPoints">${user.points}</span></span>
+      ${adminLink}
+      <a href="/user-center.html" class="btn btn-outline-light me-2">个人中心</a>
+      <button class="btn btn-light" onclick="logout()">退出</button>`;
+      } else {
+        document.getElementById("auth-buttons").innerHTML =
+          '<a href="/login.html" class="btn btn-outline-light me-2">登录</a><a href="/register.html" class="btn btn-light">注册</a>';
+      }
+
+      // ========== 加载分类栏 ==========
+      async function loadCategories() {
+        const res = await api("/api/public/categories");
+        if (res.code !== 200) return;
+        const tree = res.data;
+        let html = "";
+        tree.forEach((cat) => {
+          html += `<div class="btn-group me-2 mb-2">
+      <button class="btn btn-outline-secondary btn-sm" onclick="filterCategory(${cat.id})">${cat.name}</button>`;
+          if (cat.children && cat.children.length > 0) {
+            html +=
+              '<button class="btn btn-outline-secondary btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown"></button>';
+            html += '<ul class="dropdown-menu">';
+            cat.children.forEach((sub) => {
+              html += `<li><a class="dropdown-item" href="#" onclick="filterCategory(${sub.id})">${sub.name}</a></li>`;
+            });
+            html += "</ul>";
+          }
+          html += "</div>";
+        });
+        document.getElementById("category-bar").innerHTML = html;
+      }
+      window.filterCategory = function (categoryId) {
+        // 跳转到按分类查看的页面或弹窗展示，此处简单跳转到首页并带参数，由首页轮询结果区处理（可进一步扩展）
+        alert(`筛选分类ID: ${categoryId}，可在实际项目中实现跳转或异步加载`);
+        // 实际可用 window.location.href=`/posts-by-category.html?cat=${categoryId}` 并单独建页，此处省略
+      };
+
+      // ========== 轮播图 ==========
+      async function loadCarousel() {
+        const res = await api("/api/public/carousel");
+        if (res.code !== 200) return;
+        const items = res.data;
+        const inner = document.getElementById("carousel-inner");
+        inner.innerHTML = items
+          .map(
+            (item, index) => `
+    <div class="carousel-item ${index === 0 ? "active" : ""}">
+      <a href="${item.link_url || "#"}" target="_blank">
+        <img src="${item.cover_image || ""}" class="d-block w-100" style="max-height:300px; object-fit:cover;" alt="${item.title}">
+      </a>
+      <div class="carousel-caption d-none d-md-block">
+        <h5>${item.title}</h5>
+      </div>
+    </div>
+  `,
+          )
+          .join("");
+        if (items.length === 0) {
+          inner.innerHTML =
+            '<div class="carousel-item active"><div class="text-center p-5 bg-light">暂无轮播内容</div></div>';
+        }
+      }
+
+      // ========== 板块数据加载 ==========
+      async function loadAnnouncements() {
+        const res = await api("/api/public/announcements");
+        if (res.code !== 200) return;
+        const list = res.data;
+        const container = document.getElementById("announcementList");
+        container.innerHTML =
+          list
+            .map(
+              (a) => `
+    <a href="#" class="list-group-item list-group-item-action">
+      <strong>${a.title}</strong>
+      <p class="mb-1">${a.content}</p>
+      <small>${new Date(a.created_at).toLocaleString()}</small>
+    </a>
+  `,
+            )
+            .join("") || '<p class="text-muted">暂无公告</p>';
+      }
+
+      async function loadUnsolved() {
+        const res = await api("/api/public/unsolved");
+        if (res.code !== 200) return;
+        const list = res.data;
+        const container = document.getElementById("unsolvedList");
+        container.innerHTML =
+          list
+            .map(
+              (p) => `
+    <a href="/post-detail.html?id=${p.id}" class="list-group-item list-group-item-action">
+      <strong>${p.title}</strong>
+      <span class="badge bg-warning float-end">${p.bounty}积分</span>
+      <small class="text-muted">${p.nickname} 发布于 ${new Date(p.created_at).toLocaleString()}</small>
+    </a>
+  `,
+            )
+            .join("") || '<p class="text-muted">暂无待解决问题</p>';
+      }
+
+      async function loadRecommended() {
+        const res = await api("/api/public/recommended");
+        if (res.code !== 200) return;
+        const list = res.data;
+        const container = document.getElementById("recommendedList");
+        container.innerHTML =
+          list
+            .map(
+              (p) => `
+    <a href="/post-detail.html?id=${p.id}" class="list-group-item list-group-item-action">
+      <strong>${p.title}</strong>
+      <small class="text-muted">${p.nickname} 发布于 ${new Date(p.created_at).toLocaleString()}</small>
+    </a>
+  `,
+            )
+            .join("") || '<p class="text-muted">暂无推荐帖子</p>';
+      }
+
+      async function loadLatestReply() {
+        const res = await api("/api/public/latest-reply");
+        if (res.code !== 200) return;
+        const list = res.data;
+        const container = document.getElementById("latestReplyList");
+        container.innerHTML =
+          list
+            .map(
+              (p) => `
+    <a href="/post-detail.html?id=${p.id}" class="list-group-item list-group-item-action">
+      <strong>${p.title}</strong>
+      <small class="text-muted">${p.poster} 最近回复于 ${new Date(p.last_reply).toLocaleString()}</small>
+    </a>
+  `,
+            )
+            .join("") || '<p class="text-muted">暂无回复</p>';
+      }
+
+      // 初始化所有
+      loadCategories();
+      loadCarousel();
+      loadAnnouncements();
+      loadUnsolved();
+      loadRecommended();
+      loadLatestReply();
+    </script>
+  </body>
+</html>

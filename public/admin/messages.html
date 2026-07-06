@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>站内消息 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <div class="flex-grow-1 p-4">
+        <h3>发送站内消息</h3>
+        <div class="card">
+          <div class="card-body">
+            <div class="mb-3">
+              <label>接收用户（输入用户ID或账号搜索）</label>
+              <div class="input-group">
+                <input
+                  type="text"
+                  class="form-control"
+                  id="userSearchInput"
+                  placeholder="账号/昵称"
+                />
+                <button
+                  class="btn btn-outline-secondary"
+                  onclick="searchUser()"
+                >
+                  搜索
+                </button>
+              </div>
+              <div id="searchResult" class="list-group mt-1"></div>
+              <div id="selectedUsers" class="mt-2"></div>
+            </div>
+            <div class="mb-3">
+              <label>消息内容</label>
+              <textarea
+                class="form-control"
+                id="messageContent"
+                rows="4"
+                required
+              ></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="sendMessage()">
+              发送
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      let selectedUsers = []; // 存储选中的用户 { id, username, nickname }
+
+      // 搜索用户
+      async function searchUser() {
+        const keyword = document.getElementById("userSearchInput").value.trim();
+        if (!keyword) return alert("请输入搜索关键词");
+        const res = await api(
+          `/api/admin/members?username=${encodeURIComponent(keyword)}&size=5`,
+        );
+        if (res.code !== 200) return alert("搜索失败");
+        const list = res.data.list;
+        const container = document.getElementById("searchResult");
+        container.innerHTML =
+          list
+            .map(
+              (u) => `
+    <a href="#" class="list-group-item list-group-item-action" onclick="addUser(${u.id}, '${u.username}', '${u.nickname}')">
+      ${u.username} (${u.nickname})
+    </a>
+  `,
+            )
+            .join("") || '<div class="list-group-item">未找到用户</div>';
+      }
+
+      // 添加用户到待发送列表
+      function addUser(id, username, nickname) {
+        if (selectedUsers.some((u) => u.id === id))
+          return alert("已添加该用户");
+        selectedUsers.push({ id, username, nickname });
+        renderSelected();
+      }
+
+      // 渲染已选用户
+      function renderSelected() {
+        const container = document.getElementById("selectedUsers");
+        container.innerHTML = selectedUsers
+          .map(
+            (u) =>
+              `<span class="badge bg-info me-1 mb-1">${u.username} (${u.nickname}) 
+      <button type="button" class="btn-close btn-close-white" style="font-size:0.6rem" onclick="removeUser(${u.id})"></button>
+    </span>`,
+          )
+          .join("");
+      }
+
+      // 移除已选用户
+      function removeUser(id) {
+        selectedUsers = selectedUsers.filter((u) => u.id !== id);
+        renderSelected();
+      }
+
+      // 发送消息
+      async function sendMessage() {
+        const content = document.getElementById("messageContent").value.trim();
+        if (!content) return alert("请输入消息内容");
+        if (selectedUsers.length === 0) return alert("请至少选择一个接收用户");
+        const userIds = selectedUsers.map((u) => u.id);
+        let res;
+        if (userIds.length === 1) {
+          res = await api("/api/admin/messages/send", {
+            method: "POST",
+            body: JSON.stringify({ user_id: userIds[0], content }),
+          });
+        } else {
+          res = await api("/api/admin/messages/batch-send", {
+            method: "POST",
+            body: JSON.stringify({ user_ids: userIds, content }),
+          });
+        }
+        if (res.code === 200) {
+          alert("消息发送成功");
+          selectedUsers = [];
+          renderSelected();
+          document.getElementById("messageContent").value = "";
+          document.getElementById("searchResult").innerHTML = "";
+        } else {
+          alert(res.msg);
+        }
+      }
+    </script>
+  </body>
+</html>

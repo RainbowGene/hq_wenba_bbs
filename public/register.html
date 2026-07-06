@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>注册 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/modal-alert.js"></script>
+    <script src="/js/common.js"></script>
+  </head>
+  <body>
+    <div class="container mt-5">
+      <div class="row justify-content-center">
+        <div class="col-md-6">
+          <h3>新用户注册</h3>
+          <form id="registerForm">
+            <div class="mb-2">
+              <label>账号（1大写字母+7位数字）</label>
+              <input
+                type="text"
+                class="form-control"
+                name="username"
+                placeholder="如A1234567"
+                required
+                pattern="[A-Z]\d{7}"
+              />
+            </div>
+            <div class="mb-2">
+              <label>密码（6-12字符）</label>
+              <input
+                type="password"
+                class="form-control"
+                name="password"
+                required
+                minlength="6"
+                maxlength="12"
+              />
+            </div>
+            <div class="mb-2">
+              <label>昵称（最多6个汉字）</label>
+              <input
+                type="text"
+                class="form-control"
+                name="nickname"
+                required
+                maxlength="18"
+              />
+            </div>
+            <div class="mb-2">
+              <label>所属园区</label>
+              <select
+                class="form-select"
+                name="campus_id"
+                id="campusSelect"
+                required
+              ></select>
+            </div>
+            <div class="mb-2">
+              <label>身份证号</label>
+              <input type="text" class="form-control" name="id_card" required />
+            </div>
+            <div class="mb-2">
+              <label>联系方式（电话/邮箱）</label>
+              <input type="text" class="form-control" name="contact" required />
+            </div>
+            <div class="mb-2">
+              <label>密保问题</label>
+              <input
+                type="text"
+                class="form-control"
+                name="security_question"
+                required
+              />
+            </div>
+            <div class="mb-2">
+              <label>密保答案</label>
+              <input
+                type="text"
+                class="form-control"
+                name="security_answer"
+                required
+              />
+            </div>
+            <button type="submit" class="btn btn-primary w-100">注册</button>
+          </form>
+          <div class="mt-2"><a href="/login.html">已有账号？去登录</a></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // 加载园区选项
+      fetch("/api/public/campuses")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.code === 200) {
+            const sel = document.getElementById("campusSelect");
+            d.data.forEach((c) => {
+              sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+            });
+          }
+        });
+      // 注册表单提交
+      document
+        .getElementById("registerForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const form = e.target;
+          const data = Object.fromEntries(new FormData(form));
+          // 前端校验昵称汉字长度（简化判断）
+          const nickLen = data.nickname.replace(/[^\x00-\xff]/g, "aa").length;
+          if (nickLen > 6 * 3) return alert("昵称最多6个汉字");
+          const res = await api("/api/auth/register", {
+            method: "POST",
+            body: JSON.stringify(data),
+          });
+          if (res.code === 200) {
+            alert("注册成功！赠送300积分");
+            window.location.href = "/login.html";
+          } else {
+            alert(res.msg);
+          }
+        });
+    </script>
+  </body>
+</html>

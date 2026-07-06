@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>提问管理 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+    <style>
+      /* 缩小字段宽度 */
+      .col-id {
+        width: 50px;
+      }
+      .col-category {
+        width: 80px;
+      }
+      .col-title {
+        max-width: 220px;
+      }
+      .col-campus {
+        width: 70px;
+      }
+      .col-resolved {
+        width: 70px;
+      }
+      .col-audit {
+        width: 70px;
+      }
+      .col-username {
+        width: 80px;
+      }
+      .col-nickname {
+        width: 120px;
+      }
+      .col-bounty {
+        width: 60px;
+      }
+      .col-time {
+        width: 220px;
+      }
+      .col-status {
+        width: 100px;
+      }
+      .col-actions {
+        min-width: 260px;
+      }
+      /* 文本截断 */
+      .text-truncate-cell {
+        display: block;
+        max-width: 120px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: default;
+      }
+      /* 操作按钮平铺：使用 btn-group-sm 并减小间距 */
+      .action-btn-group .btn {
+        padding: 2px 6px;
+        font-size: 0.85rem;
+        margin-left: 5px;
+      }
+      .dropdown-menu-sm .dropdown-item {
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="p-4">
+      <h3>提问管理</h3>
+      <!-- 搜索区保持不变（略，使用之前提供的完整搜索区） -->
+      <div class="row mb-3 g-2 align-items-end">
+        <div class="col-md-2">
+          <input
+            type="text"
+            class="form-control"
+            id="searchId"
+            placeholder="问题ID"
+          />
+        </div>
+        <div class="col-md-2">
+          <input
+            type="text"
+            class="form-control"
+            id="searchTitle"
+            placeholder="标题关键字"
+          />
+        </div>
+        <div class="col-md-2">
+          <select class="form-select" id="searchStatus">
+            <option value="">全部审核状态</option>
+            <option value="0">待审核</option>
+            <option value="1">已审核</option>
+            <option value="2">退回</option>
+          </select>
+        </div>
+        <!-- <div class="col-md-2">
+          <select class="form-select" id="searchResolved">
+            <option value="">是否解决</option>
+            <option value="1">已解决</option>
+            <option value="0">未解决</option>
+          </select>
+        </div> -->
+        <div class="col-md-2">
+          <select class="form-select" id="searchRecommended">
+            <option value="">推荐状态</option>
+            <option value="1">已推荐</option>
+            <option value="0">未推荐</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <select class="form-select" id="searchTop">
+            <option value="">置顶状态</option>
+            <option value="1">已置顶</option>
+            <option value="0">未置顶</option>
+          </select>
+        </div>
+        <!-- <div class="col-md-2">
+          <select class="form-select" id="searchBlocked">
+            <option value="">屏蔽状态</option>
+            <option value="1">已屏蔽</option>
+            <option value="0">未屏蔽</option>
+          </select>
+        </div> -->
+        <div class="col-md-2">
+          <button class="btn btn-primary w-100" onclick="searchPosts()">
+            搜索
+          </button>
+        </div>
+      </div>
+
+      <!-- 批量操作 -->
+      <div class="btn-group mb-3">
+        <button
+          class="btn btn-outline-primary btn-sm"
+          onclick="batchAction('recommend')"
+        >
+          批量推荐
+        </button>
+        <button
+          class="btn btn-outline-warning btn-sm"
+          onclick="batchAction('top')"
+        >
+          批量置顶
+        </button>
+        <button
+          class="btn btn-outline-danger btn-sm"
+          onclick="batchAction('block')"
+        >
+          批量屏蔽
+        </button>
+        <button
+          class="btn btn-outline-info btn-sm"
+          onclick="batchToggleAudit()"
+        >
+          批量切换审核
+        </button>
+        <button class="btn btn-outline-danger btn-sm" onclick="batchDelete()">
+          批量删除
+        </button>
+      </div>
+
+      <table class="table table-bordered table-hover" id="postTable">
+        <thead>
+          <tr>
+            <th class="col-id"><input type="checkbox" id="selectAll" /></th>
+            <th class="col-id">ID</th>
+            <th class="col-category">分类</th>
+            <th class="col-title">标题</th>
+            <th class="col-campus">园区</th>
+            <th class="col-resolved">解决</th>
+            <th class="col-audit">审核</th>
+            <th class="col-username">工号</th>
+            <th class="col-nickname">昵称</th>
+            <th class="col-bounty">悬赏</th>
+            <th class="col-time">时间</th>
+            <th class="col-status">状态</th>
+            <th class="col-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody id="postTableBody"></tbody>
+      </table>
+      <div id="paginationContainer"></div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/modal-alert.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/wenba-editor.js"></script>
+    <script src="/js/edit-post-modal.js"></script>
+    <script>
+      let currentPage = 1;
+      const pageSize = 15;
+      let currentFilters = {};
+
+      async function loadPosts(page = 1, filters = {}) {
+        currentPage = page;
+        currentFilters = filters;
+        const params = new URLSearchParams({
+          page,
+          size: pageSize,
+          ...filters,
+        });
+        const res = await api(`/api/admin/posts/manage?${params}`);
+        if (res.code !== 200) {
+          ModalAlert.error(res.msg || "加载失败");
+          return;
+        }
+        const { list, total } = res.data;
+        const tbody = document.getElementById("postTableBody");
+        if (list.length === 0) {
+          tbody.innerHTML =
+            '<tr><td colspan="13" class="text-center">暂无数据</td></tr>';
+          return;
+        }
+        tbody.innerHTML = list
+          .map((item) => {
+            const statusTags = [];
+            if (item.is_recommended)
+              statusTags.push(
+                '<span class="badge bg-success me-1">推荐</span>',
+              );
+            if (item.is_top)
+              statusTags.push(
+                '<span class="badge bg-warning me-1">置顶</span>',
+              );
+            if (item.is_blocked)
+              statusTags.push('<span class="badge bg-danger me-1">屏蔽</span>');
+            // 标题截断，保留完整 title
+            const shortTitle =
+              item.title.length > 20
+                ? item.title.substring(0, 20) + "..."
+                : item.title;
+            return `<tr>
+      <td><input type="checkbox" value="${item.id}" class="rowCheck"></td>
+      <td>${item.id}</td>
+      <td>${item.category_name}</td>
+      <td><span class="text-truncate-cell" title="${item.title.replace(/"/g, "&quot;")}">${shortTitle}</span></td>
+      <td>${item.campus_name || "-"}</td>
+      <td>${item.is_resolved ? "已解决" : "未解决"}</td>
+      <td>${item.audit_status === 1 ? "已审核" : item.audit_status === 2 ? "退回" : "待审核"}</td>
+      <td>${item.username}</td>
+      <td>${item.nickname}</td>
+      <td>${item.bounty}</td>
+      <td>${new Date(item.created_at).toLocaleDateString()}</td>
+      <td>${statusTags.length ? statusTags.join("") : "普通"}</td>
+      <td>
+        <div class="btn-group btn-group-sm action-btn-group">
+          <button class="btn btn-sm btn-info" onclick="openEditPostModal(${item.id}, 'manage')">编辑</button>
+          <button class="btn btn-sm ${item.audit_status === 1 ? "btn-outline-warning" : "btn-outline-success"}" onclick="toggleAudit(${item.id})">${item.audit_status === 1 ? "取消审核" : "通过审核"}</button>
+          <div class="dropdown">
+            <button class="btn btn-sm btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">状态</button>
+            <ul class="dropdown-menu dropdown-menu-sm">
+              <li><a class="dropdown-item" href="#" data-postid="${item.id}" data-action="recommend">${item.is_recommended ? "取消推荐" : "推荐"}</a></li>
+              <li><a class="dropdown-item" href="#" data-postid="${item.id}" data-action="top">${item.is_top ? "取消置顶" : "置顶"}</a></li>
+              <li><a class="dropdown-item" href="#" data-postid="${item.id}" data-action="block">${item.is_blocked ? "取消屏蔽" : "屏蔽"}</a></li>
+            </ul>
+          <button class="btn btn-sm btn-danger" onclick="deletePost(${item.id})">删除</button>
+          </div>
+        </div>
+      </td>
+    </tr>`;
+          })
+          .join("");
+        renderPagination(
+          document.getElementById("paginationContainer"),
+          page,
+          total,
+          pageSize,
+          (p) => loadPosts(p, filters),
+        );
+      }
+
+      function onPostSaved() {
+        loadPosts(currentPage, currentFilters);
+      }
+
+      function searchPosts() {
+        const filters = {
+          id: document.getElementById("searchId")?.value?.trim() || "",
+          title: document.getElementById("searchTitle")?.value?.trim() || "",
+          audit_status: document.getElementById("searchStatus")?.value || "",
+          is_resolved: document.getElementById("searchResolved")?.value || "",
+          is_recommended:
+            document.getElementById("searchRecommended")?.value || "",
+          is_top: document.getElementById("searchTop")?.value || "",
+          is_blocked: document.getElementById("searchBlocked")?.value || "",
+        };
+        Object.keys(filters).forEach((k) => {
+          if (!filters[k]) delete filters[k];
+        });
+        loadPosts(1, filters);
+      }
+
+      document.getElementById("selectAll").onclick = function () {
+        document
+          .querySelectorAll(".rowCheck")
+          .forEach((cb) => (cb.checked = this.checked));
+      };
+
+      function getSelectedIds() {
+        return [...document.querySelectorAll(".rowCheck:checked")].map((cb) =>
+          parseInt(cb.value),
+        );
+      }
+
+      async function batchAction(action) {
+        const ids = getSelectedIds();
+        if (!ids.length) return ModalAlert.error("请选择帖子");
+        await api(`/api/admin/posts/manage/${action}`, {
+          method: "PUT",
+          body: JSON.stringify({ ids }),
+        });
+        loadPosts(currentPage, currentFilters);
+      }
+
+      async function batchToggleAudit() {
+        const ids = getSelectedIds();
+        if (!ids.length) return ModalAlert.error("请选择帖子");
+        await api("/api/admin/posts/manage/toggle-audit", {
+          method: "PUT",
+          body: JSON.stringify({ ids }),
+        });
+        loadPosts(currentPage, currentFilters);
+      }
+
+      async function batchDelete() {
+        const ids = getSelectedIds();
+        if (!ids.length) return ModalAlert.error("请选择帖子");
+        const confirmed = await ModalAlert.confirm(
+          "确认删除",
+          "确定要删除选中的提问吗？",
+        );
+        if (!confirmed) return;
+        await api("/api/admin/posts/delete", {
+          method: "DELETE",
+          body: JSON.stringify({ ids }),
+        });
+        loadPosts(currentPage, currentFilters);
+      }
+
+      async function handleDropdownAction(action, postId) {
+        await api(`/api/admin/posts/manage/${action}`, {
+          method: "PUT",
+          body: JSON.stringify({ ids: [postId] }),
+        });
+        loadPosts(currentPage, currentFilters);
+      }
+
+      async function toggleAudit(id) {
+        await api("/api/admin/posts/manage/toggle-audit", {
+          method: "PUT",
+          body: JSON.stringify({ ids: [id] }),
+        });
+        loadPosts(currentPage, currentFilters);
+      }
+
+      async function deletePost(id) {
+        const confirmed = await ModalAlert.confirm(
+          "确认删除",
+          "确定要删除该提问吗？",
+        );
+        if (!confirmed) return;
+        await api("/api/admin/posts/delete", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: [id] }),
+        });
+        loadPosts(currentPage, currentFilters);
+      }
+
+      document.addEventListener("click", function (e) {
+        const link = e.target.closest(".dropdown-menu a");
+        if (link) {
+          e.preventDefault();
+          const postId = parseInt(link.dataset.postid);
+          const action = link.dataset.action;
+          if (postId && action) handleDropdownAction(action, postId);
+        }
+      });
+
+      loadPosts(1);
+    </script>
+  </body>
+</html>

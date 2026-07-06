@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>帖子详情 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+      <div class="container"><a class="navbar-brand" href="/">问吧</a></div>
+    </nav>
+    <div class="container mt-3">
+      <h3 id="postTitle"></h3>
+      <p class="text-muted">
+        发帖人：<span id="postAuthor"></span> | 分类：<span
+          id="postCategory"
+        ></span>
+        | 悬赏：<span id="postBounty"></span> 积分
+      </p>
+      <hr />
+      <div id="postContent"></div>
+      <hr />
+      <h4>回复列表</h4>
+      <div id="repliesContainer"></div>
+      <!-- 登录后可见回复框 -->
+      <div id="replyBox" style="display: none" class="mt-4">
+        <textarea
+          id="replyContent"
+          class="form-control"
+          rows="3"
+          placeholder="输入你的回答..."
+        ></textarea>
+        <button class="btn btn-primary mt-2" id="submitReply">提交回复</button>
+      </div>
+    </div>
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      const urlParams = new URLSearchParams(window.location.search);
+      const postId = urlParams.get("id");
+      if (!postId) window.location.href = "/";
+      (async function loadPost() {
+        const res = await api(`/api/posts/${postId}`);
+        if (res.code !== 200) return alert("帖子不存在");
+        const post = res.data.post;
+        document.getElementById("postTitle").innerText = post.title;
+        document.getElementById("postAuthor").innerText = post.nickname;
+        document.getElementById("postCategory").innerText = post.category_name;
+        document.getElementById("postBounty").innerText = post.bounty;
+        document.getElementById("postContent").innerHTML = post.content;
+        // 回复列表
+        const repliesHtml = res.data.replies
+          .map(
+            (r) => `
+        <div class="card mb-2">
+          <div class="card-body">
+            <strong>${r.nickname}</strong> ${r.is_best ? '<span class="badge bg-success">最佳答案</span>' : ""}
+            <p>${r.content}</p>
+            <small class="text-muted">${new Date(r.created_at).toLocaleString()}</small>
+          </div>
+        </div>
+      `,
+          )
+          .join("");
+        document.getElementById("repliesContainer").innerHTML =
+          repliesHtml || "<p>暂无回复</p>";
+        // 登录用户显示回复框
+        if (getToken()) {
+          document.getElementById("replyBox").style.display = "block";
+          document
+            .getElementById("submitReply")
+            .addEventListener("click", async () => {
+              const content = document.getElementById("replyContent").value;
+              const res = await api(`/api/posts/${postId}/reply`, {
+                method: "POST",
+                body: JSON.stringify({ content }),
+              });
+              if (res.code === 200) {
+                alert("回复成功，等待贴主审核");
+                location.reload();
+              } else alert(res.msg);
+            });
+        }
+      })();
+    </script>
+  </body>
+</html>

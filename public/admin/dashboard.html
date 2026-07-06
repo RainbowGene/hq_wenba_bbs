@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>统计看板 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <div class="flex-grow-1 p-4">
+        <h3>数据统计看板</h3>
+        <div class="row" id="statsCards"></div>
+      </div>
+    </div>
+
+    <!-- 权限守卫必须最先加载 -->
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      (async () => {
+        const res = await api("/api/admin/dashboard/stats");
+        if (res.code === 200) {
+          const d = res.data;
+          const html = `
+        <div class="col-md-2"><div class="card text-white bg-primary"><div class="card-body"><h5>总用户</h5><h2>${d.totalUsers}</h2></div></div></div>
+        <div class="col-md-2"><div class="card text-white bg-success"><div class="card-body"><h5>昨日活跃</h5><h2>${d.yesterdayActive}</h2></div></div></div>
+        <div class="col-md-2"><div class="card text-white bg-info"><div class="card-body"><h5>昨日发帖</h5><h2>${d.yesterdayPosts}</h2></div></div></div>
+        <div class="col-md-2"><div class="card text-white bg-warning"><div class="card-body"><h5>本周新用户</h5><h2>${d.weekNewUsers}</h2></div></div></div>
+        <div class="col-md-2"><div class="card text-white bg-danger"><div class="card-body"><h5>年度审核总数</h5><h2>${d.yearAudited}</h2></div></div></div>
+      `;
+          document.getElementById("statsCards").innerHTML = html;
+        }
+      })();
+    </script>
+  </body>
+</html>

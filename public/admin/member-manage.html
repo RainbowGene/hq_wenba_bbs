@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>会员管理 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <!-- 统一后台侧边导航 -->
+      <div class="flex-grow-1 p-4">
+        <h3>会员管理</h3>
+        <!-- 搜索区 -->
+        <div class="row mb-3">
+          <div class="col-md-3">
+            <input
+              type="text"
+              class="form-control"
+              id="searchUsername"
+              placeholder="账号"
+            />
+          </div>
+          <div class="col-md-3">
+            <input
+              type="text"
+              class="form-control"
+              id="searchNickname"
+              placeholder="昵称"
+            />
+          </div>
+          <div class="col-md-2">
+            <select class="form-select" id="searchStatus">
+              <option value="">全部状态</option>
+              <option value="1">正常</option>
+              <option value="0">冻结</option>
+              <option value="-1">封禁</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-primary" onclick="searchMembers()">
+              搜索
+            </button>
+          </div>
+        </div>
+
+        <table class="table table-bordered table-hover" id="memberTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>账号</th>
+              <th>昵称</th>
+              <th>园区</th>
+              <th>积分</th>
+              <th>状态</th>
+              <th>注册时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="paginationContainer"></div>
+      </div>
+    </div>
+
+    <!-- 用户详情模态框 -->
+    <div class="modal fade" id="userDetailModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">用户详情</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body" id="userDetailBody">
+            <!-- 动态填充 -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 发送站内消息模态框 -->
+    <div class="modal fade" id="sendMessageModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              发送消息给 <span id="msgTargetNickname"></span>
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="msgTargetId" />
+            <div class="mb-2">
+              <label>消息内容</label>
+              <textarea
+                class="form-control"
+                id="messageContent"
+                rows="4"
+                required
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              取消
+            </button>
+            <button type="button" class="btn btn-primary" id="sendMessageBtn">
+              发送
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      let currentPage = 1;
+      const pageSize = 15;
+
+      async function loadMembers(page = 1, filters = {}) {
+        currentPage = page;
+        const params = new URLSearchParams({
+          page,
+          size: pageSize,
+          ...filters,
+        });
+        const res = await api(`/api/admin/members?${params}`);
+        if (res.code !== 200) return alert(res.msg);
+        const { list, total } = res.data;
+        const tbody = document.querySelector("#memberTable tbody");
+        tbody.innerHTML =
+          list
+            .map(
+              (m) => `
+    <tr>
+      <td>${m.id}</td>
+      <td>${m.username}</td>
+      <td>${m.nickname}</td>
+      <td>${m.campus_name || "-"}</td>
+      <td>${m.points}</td>
+      <td>${m.status === 1 ? "正常" : m.status === 0 ? "冻结" : "封禁"}</td>
+      <td>${new Date(m.created_at).toLocaleString()}</td>
+      <td>
+        <button class="btn btn-sm btn-info" onclick="viewDetail(${m.id})">详情</button>
+        <button class="btn btn-sm btn-warning" onclick="toggleFreeze(${m.id})">${m.status === 0 ? "解冻" : "冻结"}</button>
+        <button class="btn btn-sm btn-danger" onclick="toggleBan(${m.id})">${m.status === -1 ? "解封" : "封禁"}</button>
+        <button class="btn btn-sm btn-secondary" onclick="sendMessage(${m.id}, '${m.nickname}')">发消息</button>
+      </td>
+    </tr>
+  `,
+            )
+            .join("") ||
+          '<tr><td colspan="8" class="text-center">无数据</td></tr>';
+        renderPagination(
+          document.getElementById("paginationContainer"),
+          page,
+          total,
+          pageSize,
+          (p) => loadMembers(p, filters),
+        );
+      }
+
+      function searchMembers() {
+        const filters = {
+          username: document.getElementById("searchUsername").value.trim(),
+          nickname: document.getElementById("searchNickname").value.trim(),
+          status: document.getElementById("searchStatus").value,
+        };
+        Object.keys(filters).forEach((k) => {
+          if (!filters[k] && filters[k] !== "0") delete filters[k];
+        });
+        loadMembers(1, filters);
+      }
+
+      // 查看详情
+      async function viewDetail(id) {
+        const res = await api(`/api/admin/members/${id}`);
+        if (res.code !== 200) return alert("获取详情失败");
+        const user = res.data;
+        const detailHtml = `
+    <p><strong>账号：</strong>${user.username}</p>
+    <p><strong>昵称：</strong>${user.nickname}</p>
+    <p><strong>园区：</strong>${user.campus_name || "-"}</p>
+    <p><strong>身份证号：</strong>${user.id_card}</p>
+    <p><strong>联系方式：</strong>${user.contact}</p>
+    <p><strong>积分：</strong>${user.points}</p>
+    <p><strong>注册时间：</strong>${new Date(user.created_at).toLocaleString()}</p>
+    <p><strong>状态：</strong>${user.status === 1 ? "正常" : user.status === 0 ? "冻结" : "封禁"}</p>
+  `;
+        document.getElementById("userDetailBody").innerHTML = detailHtml;
+        new bootstrap.Modal(document.getElementById("userDetailModal")).show();
+      }
+
+      // 打开发送消息模态框
+      window.sendMessage = function (userId, nickname) {
+        document.getElementById("msgTargetId").value = userId;
+        document.getElementById("msgTargetNickname").innerText = nickname;
+        document.getElementById("messageContent").value = "";
+        new bootstrap.Modal(document.getElementById("sendMessageModal")).show();
+      };
+
+      // 发送消息
+      document
+        .getElementById("sendMessageBtn")
+        .addEventListener("click", async () => {
+          const userId = document.getElementById("msgTargetId").value;
+          const content = document
+            .getElementById("messageContent")
+            .value.trim();
+          if (!content) return alert("消息内容不能为空");
+          const res = await api("/api/admin/messages/send", {
+            method: "POST",
+            body: JSON.stringify({ user_id: userId, content }),
+          });
+          if (res.code === 200) {
+            alert("发送成功");
+            bootstrap.Modal.getInstance(
+              document.getElementById("sendMessageModal"),
+            ).hide();
+          } else {
+            alert(res.msg || "发送失败");
+          }
+        });
+
+      // 冻结/解冻
+      async function toggleFreeze(id) {
+        const res = await api(`/api/admin/members/${id}/toggle-freeze`, {
+          method: "PUT",
+        });
+        if (res.code === 200) {
+          alert(res.msg);
+          loadMembers(currentPage);
+        } else alert(res.msg);
+      }
+
+      // 封禁/解封
+      async function toggleBan(id) {
+        const res = await api(`/api/admin/members/${id}/toggle-ban`, {
+          method: "PUT",
+        });
+        if (res.code === 200) {
+          alert(res.msg);
+          loadMembers(currentPage);
+        } else alert(res.msg);
+      }
+
+      // 初始化
+      loadMembers();
+    </script>
+  </body>
+</html>

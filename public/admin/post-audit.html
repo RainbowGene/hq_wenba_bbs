@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>审核提问 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="p-4">
+      <h3>审核提问</h3>
+      <div class="btn-group mb-3">
+        <button class="btn btn-success btn-sm" onclick="batchAction('approve')">
+          批量审核通过
+        </button>
+        <button class="btn btn-warning btn-sm" onclick="batchAction('reject')">
+          批量退回
+        </button>
+        <button class="btn btn-danger btn-sm" onclick="batchDelete()">
+          批量删除
+        </button>
+      </div>
+      <table class="table table-bordered" id="auditTable">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="selectAll" /></th>
+            <th>ID</th>
+            <th>分类</th>
+            <th>工号</th>
+            <th>昵称</th>
+            <th>悬赏积分</th>
+            <th>时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="auditTableBody"></tbody>
+      </table>
+      <div id="paginationContainer"></div>
+    </div>
+
+    <!-- 脚本顺序至关重要 -->
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/modal-alert.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/wenba-editor.js"></script>
+    <script src="/js/edit-post-modal.js"></script>
+    <script>
+      let currentPage = 1;
+      const pageSize = 15;
+
+      function onPostSaved() {
+        loadAudit(currentPage);
+      }
+
+      async function loadAudit(page = 1) {
+        currentPage = page;
+        const res = await api(
+          `/api/admin/posts/audit?page=${page}&size=${pageSize}`,
+        );
+        if (res.code !== 200) return;
+        const { list, total } = res.data;
+        const tbody = document.getElementById("auditTableBody");
+        tbody.innerHTML =
+          list
+            .map(
+              (item) => `
+    <tr>
+      <td><input type="checkbox" value="${item.id}" class="rowCheck"></td>
+      <td>${item.id}</td>
+      <td>${item.category_name}</td>
+      <td>${item.username}</td>
+      <td>${item.nickname}</td>
+      <td>${item.bounty}</td>
+      <td>${new Date(item.created_at).toLocaleString()}</td>
+      <td>
+        <button class="btn btn-sm btn-info" onclick="openEditPostModal(${item.id}, 'audit')">编辑</button>
+        <button class="btn btn-sm btn-success" onclick="singleAudit('approve',${item.id})">通过</button>
+        <button class="btn btn-sm btn-warning" onclick="singleAudit('reject',${item.id})">退回</button>
+        <button class="btn btn-sm btn-danger" onclick="deletePost(${item.id})">删除</button>
+      </td>
+    </tr>
+  `,
+            )
+            .join("") ||
+          '<tr><td colspan="8" class="text-center">暂无待审核提问</td></tr>';
+        renderPagination(
+          document.getElementById("paginationContainer"),
+          page,
+          total,
+          pageSize,
+          loadAudit,
+        );
+      }
+
+      document
+        .getElementById("selectAll")
+        .addEventListener("click", function () {
+          document
+            .querySelectorAll(".rowCheck")
+            .forEach((cb) => (cb.checked = this.checked));
+        });
+
+      function getSelectedIds() {
+        return [...document.querySelectorAll(".rowCheck:checked")].map(
+          (cb) => cb.value,
+        );
+      }
+
+      async function batchAction(action) {
+        const ids = getSelectedIds();
+        if (!ids.length) return ModalAlert.error("请选择帖子");
+        await api(`/api/admin/posts/audit/${action}`, {
+          method: "PUT",
+          body: JSON.stringify({ ids }),
+        });
+        loadAudit(currentPage);
+      }
+
+      async function singleAudit(action, id) {
+        await api(`/api/admin/posts/audit/${action}`, {
+          method: "PUT",
+          body: JSON.stringify({ ids: [id] }),
+        });
+        loadAudit(currentPage);
+      }
+
+      async function batchDelete() {
+        const ids = getSelectedIds();
+        if (!ids.length) return ModalAlert.error("请选择帖子");
+        const confirmed = await ModalAlert.confirm(
+          "确认删除",
+          "确定要删除选中的提问吗？",
+        );
+        if (!confirmed) return;
+        await api("/api/admin/posts/delete", {
+          method: "DELETE",
+          body: JSON.stringify({ ids }),
+        });
+        loadAudit(currentPage);
+      }
+
+      async function deletePost(id) {
+        const confirmed = await ModalAlert.confirm(
+          "确认删除",
+          "确定要删除该提问吗？",
+        );
+        if (!confirmed) return;
+        await api("/api/admin/posts/delete", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: [id] }),
+        });
+        loadAudit(currentPage);
+      }
+
+      // 初始化
+      loadAudit();
+    </script>
+  </body>
+</html>

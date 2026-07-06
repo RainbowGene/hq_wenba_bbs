@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>网站配置 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <div class="flex-grow-1 p-4">
+        <h3>网站配置</h3>
+        <div class="card mb-4">
+          <div class="card-header"><h5>敏感词库</h5></div>
+          <div class="card-body">
+            <div class="mb-2">
+              <label>当前敏感词（一行一个）</label>
+              <textarea
+                class="form-control"
+                id="sensitiveWords"
+                rows="6"
+              ></textarea>
+            </div>
+            <button class="btn btn-primary" id="saveWordsBtn">
+              保存敏感词
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h5>积分规则配置</h5></div>
+          <div class="card-body">
+            <div class="row mb-2">
+              <div class="col-md-4">
+                <label>每日登录奖励积分</label>
+                <input
+                  type="number"
+                  class="form-control"
+                  id="dailyLoginReward"
+                  min="0"
+                />
+              </div>
+              <div class="col-md-4">
+                <label>注册奖励积分（默认300，谨慎修改）</label>
+                <input
+                  type="number"
+                  class="form-control"
+                  id="registerReward"
+                  min="0"
+                />
+              </div>
+            </div>
+            <div class="mb-2">
+              <label>允许的悬赏积分选项（逗号分隔，如 50,100,200）</label>
+              <input type="text" class="form-control" id="publishPostOptions" />
+            </div>
+            <button class="btn btn-primary" id="savePointsBtn">
+              保存积分规则
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      // 加载当前配置
+      async function loadConfig() {
+        const res = await api("/api/admin/site-config");
+        if (res.code === 200) {
+          const data = res.data;
+          document.getElementById("sensitiveWords").value = (
+            data.sensitiveWords || []
+          ).join("\n");
+          document.getElementById("dailyLoginReward").value =
+            data.points.dailyLoginReward || 5;
+          document.getElementById("registerReward").value =
+            data.points.registerReward || 300;
+          document.getElementById("publishPostOptions").value = (
+            data.points.publishPostOptions || []
+          ).join(",");
+        } else {
+          alert("加载配置失败");
+        }
+      }
+
+      // 保存敏感词
+      document
+        .getElementById("saveWordsBtn")
+        .addEventListener("click", async () => {
+          const wordsText = document.getElementById("sensitiveWords").value;
+          const wordsArray = wordsText
+            .split("\n")
+            .map((w) => w.trim())
+            .filter((w) => w.length > 0);
+          const res = await api("/api/admin/site-config", {
+            method: "PUT",
+            body: JSON.stringify({ sensitiveWords: wordsArray }),
+          });
+          if (res.code === 200) {
+            alert("敏感词已更新");
+          } else {
+            alert(res.msg || "保存失败");
+          }
+        });
+
+      // 保存积分规则
+      document
+        .getElementById("savePointsBtn")
+        .addEventListener("click", async () => {
+          const dailyLoginReward =
+            parseInt(document.getElementById("dailyLoginReward").value) || 0;
+          const registerReward =
+            parseInt(document.getElementById("registerReward").value) || 300;
+          const optionsStr =
+            document.getElementById("publishPostOptions").value;
+          const optionsArray = optionsStr
+            .split(",")
+            .map((s) => parseInt(s.trim()))
+            .filter((n) => !isNaN(n));
+          const res = await api("/api/admin/site-config", {
+            method: "PUT",
+            body: JSON.stringify({
+              points: {
+                dailyLoginReward,
+                registerReward,
+                publishPostOptions: optionsArray,
+              },
+            }),
+          });
+          if (res.code === 200) {
+            alert("积分规则已更新");
+          } else {
+            alert(res.msg || "保存失败");
+          }
+        });
+
+      loadConfig();
+    </script>
+  </body>
+</html>

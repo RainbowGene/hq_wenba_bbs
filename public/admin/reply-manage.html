@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>回复留言管理 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <div class="flex-grow-1 p-4">
+        <h3>回复留言管理</h3>
+        <!-- 搜索 -->
+        <div class="row mb-3">
+          <div class="col-md-3">
+            <input
+              type="text"
+              class="form-control"
+              id="searchPostId"
+              placeholder="问题ID"
+            />
+          </div>
+          <div class="col-md-3">
+            <input
+              type="text"
+              class="form-control"
+              id="searchUserId"
+              placeholder="发布人ID"
+            />
+          </div>
+          <div class="col-md-3">
+            <input
+              type="text"
+              class="form-control"
+              id="searchContent"
+              placeholder="内容关键字"
+            />
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-primary" onclick="searchReplies()">
+              搜索
+            </button>
+          </div>
+        </div>
+
+        <!-- 批量操作 -->
+        <div class="btn-group mb-3">
+          <button class="btn btn-outline-danger btn-sm" onclick="batchDelete()">
+            批量删除
+          </button>
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            onclick="batchBlock()"
+          >
+            批量屏蔽
+          </button>
+        </div>
+
+        <table class="table table-bordered" id="replyTable">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="selectAll" /></th>
+              <th>回复ID</th>
+              <th>发布人工号</th>
+              <th>用户ID</th>
+              <th>问题ID</th>
+              <th>回复内容</th>
+              <th>贴主审核</th>
+              <th>回复时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="paginationContainer"></div>
+      </div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      let currentPage = 1;
+      const pageSize = 15;
+
+      async function loadReplies(page = 1, filters = {}) {
+        currentPage = page;
+        const params = new URLSearchParams({
+          page,
+          size: pageSize,
+          ...filters,
+        });
+        const res = await api(`/api/admin/replies?${params}`);
+        if (res.code !== 200) return alert(res.msg);
+        const { list, total } = res.data;
+        const tbody = document.querySelector("#replyTable tbody");
+        tbody.innerHTML =
+          list
+            .map(
+              (r) => `
+    <tr>
+      <td><input type="checkbox" value="${r.id}" class="rowCheck"></td>
+      <td>${r.id}</td>
+      <td>${r.username}</td>
+      <td>${r.user_id}</td>
+      <td>${r.post_id}</td>
+      <td>${r.content}</td>
+      <td>${r.is_approved_by_owner ? "已审核" : "未审核"}</td>
+      <td>${new Date(r.created_at).toLocaleString()}</td>
+      <td>
+        <button class="btn btn-sm btn-danger" onclick="deleteReply(${r.id})">删除</button>
+        <button class="btn btn-sm btn-secondary" onclick="blockReply(${r.id})">${r.is_blocked ? "取消屏蔽" : "屏蔽"}</button>
+      </td>
+    </tr>
+  `,
+            )
+            .join("") ||
+          '<tr><td colspan="9" class="text-center">无数据</td></tr>';
+        renderPagination(
+          document.getElementById("paginationContainer"),
+          page,
+          total,
+          pageSize,
+          (p) => loadReplies(p, filters),
+        );
+      }
+
+      function getSelectedIds() {
+        return [...document.querySelectorAll(".rowCheck:checked")].map((cb) =>
+          parseInt(cb.value),
+        );
+      }
+
+      async function batchDelete() {
+        const ids = getSelectedIds();
+        if (!ids.length) return alert("请选择");
+        if (!confirm("确定删除？")) return;
+        await api("/api/admin/replies/delete", {
+          method: "DELETE",
+          body: JSON.stringify({ ids }),
+        });
+        loadReplies(currentPage);
+      }
+
+      async function batchBlock() {
+        const ids = getSelectedIds();
+        if (!ids.length) return alert("请选择");
+        await api("/api/admin/replies/block", {
+          method: "PUT",
+          body: JSON.stringify({ ids }),
+        });
+        loadReplies(currentPage);
+      }
+
+      async function deleteReply(id) {
+        if (!confirm("确定删除？")) return;
+        await api("/api/admin/replies/delete", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: [id] }),
+        });
+        loadReplies(currentPage);
+      }
+
+      async function blockReply(id) {
+        await api("/api/admin/replies/block", {
+          method: "PUT",
+          body: JSON.stringify({ ids: [id] }),
+        });
+        loadReplies(currentPage);
+      }
+
+      function searchReplies() {
+        const filters = {
+          post_id: document.getElementById("searchPostId").value.trim(),
+          user_id: document.getElementById("searchUserId").value.trim(),
+          content: document.getElementById("searchContent").value.trim(),
+        };
+        Object.keys(filters).forEach((k) => {
+          if (!filters[k]) delete filters[k];
+        });
+        loadReplies(1, filters);
+      }
+
+      document.getElementById("selectAll").onclick = function () {
+        document
+          .querySelectorAll(".rowCheck")
+          .forEach((cb) => (cb.checked = this.checked));
+      };
+
+      loadReplies();
+    </script>
+  </body>
+</html>

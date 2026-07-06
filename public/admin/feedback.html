@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>用户反馈 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <div class="flex-grow-1 p-4">
+        <h3>用户反馈</h3>
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>反馈用户</th>
+              <th>内容</th>
+              <th>管理员回复</th>
+              <th>提交时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="feedbackTableBody"></tbody>
+        </table>
+        <div id="paginationContainer"></div>
+      </div>
+    </div>
+
+    <!-- 回复模态框 -->
+    <div class="modal fade" id="replyFeedbackModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">回复反馈</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="feedbackId" />
+            <div class="mb-2">
+              <label>反馈内容</label>
+              <p id="feedbackContent" class="border p-2 bg-light"></p>
+            </div>
+            <div class="mb-2">
+              <label>回复内容</label>
+              <textarea
+                class="form-control"
+                id="replyContent"
+                rows="4"
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              取消
+            </button>
+            <button type="button" class="btn btn-primary" id="submitReplyBtn">
+              提交回复
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      let currentPage = 1;
+      const pageSize = 15;
+
+      async function loadFeedbacks(page = 1) {
+        currentPage = page;
+        const res = await api(
+          `/api/admin/feedbacks?page=${page}&size=${pageSize}`,
+        );
+        if (res.code !== 200) return alert(res.msg);
+        const { list, total } = res.data;
+        const tbody = document.getElementById("feedbackTableBody");
+        tbody.innerHTML =
+          list
+            .map(
+              (f) => `
+    <tr>
+      <td>${f.id}</td>
+      <td>${f.nickname || f.username}</td>
+      <td>${f.content}</td>
+      <td>${f.reply || '<span class="text-muted">未回复</span>'}</td>
+      <td>${new Date(f.created_at).toLocaleString()}</td>
+      <td>
+        <button class="btn btn-sm btn-primary" onclick="openReplyModal(${f.id})">${f.reply ? "修改回复" : "回复"}</button>
+      </td>
+    </tr>
+  `,
+            )
+            .join("") ||
+          '<tr><td colspan="6" class="text-center">暂无反馈</td></tr>';
+        renderPagination(
+          document.getElementById("paginationContainer"),
+          page,
+          total,
+          pageSize,
+          loadFeedbacks,
+        );
+      }
+
+      async function openReplyModal(id) {
+        // 获取反馈详情
+        const res = await api(`/api/admin/feedbacks/${id}`);
+        if (res.code !== 200) return alert("获取反馈失败");
+        const fb = res.data;
+        document.getElementById("feedbackId").value = fb.id;
+        document.getElementById("feedbackContent").innerText = fb.content;
+        document.getElementById("replyContent").value = fb.reply || "";
+        new bootstrap.Modal(
+          document.getElementById("replyFeedbackModal"),
+        ).show();
+      }
+
+      // 提交回复
+      document
+        .getElementById("submitReplyBtn")
+        .addEventListener("click", async () => {
+          const id = document.getElementById("feedbackId").value;
+          const reply = document.getElementById("replyContent").value.trim();
+          if (!reply) return alert("回复不能为空");
+          const res = await api(`/api/admin/feedbacks/${id}/reply`, {
+            method: "PUT",
+            body: JSON.stringify({ reply }),
+          });
+          if (res.code === 200) {
+            alert("回复成功");
+            bootstrap.Modal.getInstance(
+              document.getElementById("replyFeedbackModal"),
+            ).hide();
+            loadFeedbacks(currentPage);
+          } else alert(res.msg);
+        });
+
+      loadFeedbacks();
+    </script>
+  </body>
+</html>

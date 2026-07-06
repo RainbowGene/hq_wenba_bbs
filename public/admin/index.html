@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>问吧管理后台</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css"
+    />
+    <style>
+      :root {
+        --sidebar-width: 240px;
+        --sidebar-collapsed-width: 60px;
+      }
+      body {
+        overflow: hidden;
+      }
+      .admin-wrapper {
+        display: flex;
+        height: 100vh;
+      }
+      .sidebar {
+        width: var(--sidebar-width);
+        background: #212529;
+        color: #fff;
+        transition: width 0.3s;
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+      .sidebar.collapsed {
+        width: var(--sidebar-collapsed-width);
+      }
+      .sidebar .sidebar-header {
+        padding: 15px;
+        font-size: 1.2rem;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        white-space: nowrap;
+      }
+      .sidebar.collapsed .sidebar-header span {
+        display: none;
+      }
+      .sidebar .sidebar-toggle {
+        background: none;
+        border: none;
+        color: #fff;
+        font-size: 1.2rem;
+        cursor: pointer;
+      }
+      .sidebar .nav-item {
+        white-space: nowrap;
+      }
+      .sidebar .nav-link {
+        color: #adb5bd;
+        padding: 10px 15px;
+        display: flex;
+        align-items: center;
+        border-radius: 0;
+        transition: 0.2s;
+      }
+      .sidebar .nav-link:hover,
+      .sidebar .nav-link.active {
+        color: #fff;
+        background: #0d6efd;
+      }
+      .sidebar .nav-link i {
+        margin-right: 10px;
+        font-size: 1.1rem;
+      }
+      .sidebar.collapsed .nav-link span {
+        display: none;
+      }
+      .sidebar.collapsed .nav-link i {
+        margin-right: 0;
+      }
+      .sidebar .menu-group {
+        margin-bottom: 5px;
+      }
+      .sidebar .menu-group-title {
+        padding: 10px 15px;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: #6c757d;
+        font-weight: bold;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .sidebar.collapsed .menu-group-title {
+        display: none;
+      }
+      .sidebar .menu-group-items {
+        display: block;
+      }
+      .sidebar .menu-group-items.collapsed {
+        display: none;
+      }
+      .main-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .top-bar {
+        height: 50px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 15px;
+        flex-shrink: 0;
+      }
+      .top-bar .admin-info {
+        font-size: 0.9rem;
+      }
+      .top-bar .admin-info strong {
+        margin-right: 10px;
+      }
+      .tab-container {
+        display: flex;
+        align-items: center;
+        background: #f1f3f5;
+        border-bottom: 1px solid #dee2e6;
+        height: 38px;
+        flex-shrink: 0;
+        padding: 0 5px;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .tab-item {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 12px;
+        margin: 0 2px;
+        background: #e9ecef;
+        border-radius: 4px 4px 0 0;
+        cursor: pointer;
+        font-size: 0.85rem;
+        border: 1px solid transparent;
+        border-bottom: none;
+        user-select: none;
+      }
+      .tab-item.active {
+        background: #fff;
+        border-color: #dee2e6;
+      }
+      .tab-item .tab-close {
+        margin-left: 6px;
+        font-size: 0.8rem;
+        opacity: 0.6;
+      }
+      .tab-item .tab-close:hover {
+        opacity: 1;
+      }
+      .tab-context-menu {
+        position: fixed;
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 5px 0;
+        z-index: 9999;
+        display: none;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+      }
+      .tab-context-menu .context-item {
+        padding: 6px 20px;
+        cursor: pointer;
+        font-size: 0.85rem;
+      }
+      .tab-context-menu .context-item:hover {
+        background: #f0f0f0;
+      }
+      .iframe-container {
+        flex: 1;
+        position: relative;
+      }
+      .iframe-container iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: none;
+        background: #fff;
+      }
+      .iframe-container iframe.active {
+        display: block;
+      }
+      /* 编辑器容器 */
+      #createPostModal .editor-wrapper {
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="admin-wrapper">
+      <!-- 侧边栏 -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <span>问吧管理</span>
+          <button class="sidebar-toggle" id="sidebarToggle">
+            <i class="bi bi-list"></i>
+          </button>
+        </div>
+        <ul class="nav flex-column mt-2">
+          <!-- 动态菜单 -->
+        </ul>
+      </aside>
+
+      <!-- 主区域 -->
+      <div class="main-area">
+        <div class="top-bar">
+          <div class="admin-info">
+            欢迎，<strong id="adminNickname">管理员</strong>
+          </div>
+          <div>
+            <button
+              class="btn btn-sm btn-primary me-2"
+              data-bs-toggle="modal"
+              data-bs-target="#createPostModal"
+            >
+              发布提问
+            </button>
+            <a href="/" class="btn btn-sm btn-outline-secondary me-2"
+              >返回首页</a
+            >
+            <button class="btn btn-sm btn-outline-danger" id="logoutBtn">
+              退出
+            </button>
+          </div>
+        </div>
+
+        <div class="tab-container" id="tabContainer"></div>
+        <div class="iframe-container" id="iframeContainer"></div>
+      </div>
+    </div>
+
+    <!-- 右键菜单 -->
+    <div class="tab-context-menu" id="tabContextMenu">
+      <div class="context-item" data-action="refresh">刷新页面</div>
+      <div class="context-item" data-action="close">关闭</div>
+      <div class="context-item" data-action="close-others">关闭其他</div>
+      <div class="context-item" data-action="close-all">关闭所有</div>
+    </div>
+
+    <!-- 发布提问模态框 -->
+    <div
+      class="modal fade"
+      id="createPostModal"
+      tabindex="-1"
+      aria-labelledby="createPostModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="createPostModalLabel">发布新提问</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <form id="createPostForm">
+              <div class="mb-3">
+                <label class="form-label">标题</label>
+                <input
+                  type="text"
+                  class="form-control"
+                  id="postTitle"
+                  required
+                />
+              </div>
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <label class="form-label">分类</label>
+                  <select class="form-select" id="postCategory" required>
+                    <option value="">选择分类</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">悬赏积分（管理员可不填）</label>
+                  <select class="form-select" id="postBounty">
+                    <option value="0">不悬赏</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="200">200</option>
+                  </select>
+                </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">详细描述</label>
+                <div class="editor-wrapper" id="postEditorContainer"></div>
+              </div>
+              <div class="d-flex justify-content-end">
+                <button
+                  type="button"
+                  class="btn btn-secondary me-2"
+                  data-bs-dismiss="modal"
+                >
+                  取消
+                </button>
+                <button type="submit" class="btn btn-primary">发布</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/admin-guard.js"></script>
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/modal-alert.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/wenba-editor.js"></script>
+    <script src="/js/admin-frame.js"></script>
+    <script>
+      // 初始化发布提问编辑器
+      let postEditor = null;
+      const postModal = document.getElementById("createPostModal");
+      postModal.addEventListener("shown.bs.modal", async () => {
+        if (!postEditor) {
+          postEditor = await WenbaEditor.create("#postEditorContainer", {
+            height: "250px",
+            placeholder: "请输入问题详细描述...",
+          });
+        }
+        // 加载分类选项
+        loadCategoryOptions();
+      });
+
+      async function loadCategoryOptions() {
+        try {
+          const res = await api("/api/public/categories");
+          if (res.code === 200) {
+            const select = document.getElementById("postCategory");
+            select.innerHTML = '<option value="">选择分类</option>';
+            res.data.forEach((cat) => {
+              if (cat.children && cat.children.length > 0) {
+                const group = document.createElement("optgroup");
+                group.label = cat.name;
+                cat.children.forEach((sub) => {
+                  const option = document.createElement("option");
+                  option.value = sub.id;
+                  option.textContent = sub.name;
+                  group.appendChild(option);
+                });
+                select.appendChild(group);
+              } else {
+                const option = document.createElement("option");
+                option.value = cat.id;
+                option.textContent = cat.name;
+                select.appendChild(option);
+              }
+            });
+          }
+        } catch (e) {}
+      }
+
+      // 提交发布提问
+      document
+        .getElementById("createPostForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const title = document.getElementById("postTitle").value.trim();
+          const category_id = document.getElementById("postCategory").value;
+          const bounty =
+            parseInt(document.getElementById("postBounty").value) || 0;
+          const content = postEditor.getContent();
+
+          if (!title || !category_id) {
+            ModalAlert.error("请填写标题和分类");
+            return;
+          }
+
+          // 调用后端接口
+          const res = await api("/api/posts", {
+            method: "POST",
+            body: JSON.stringify({ title, category_id, content, bounty }),
+          });
+          if (res.code === 200) {
+            ModalAlert.success("提问已发布（管理员免审核）");
+            bootstrap.Modal.getInstance(postModal).hide();
+            // 清空表单
+            document.getElementById("createPostForm").reset();
+            postEditor.setContent("");
+          } else {
+            ModalAlert.error(res.msg || "发布失败");
+          }
+        });
+
+      // 关闭模态框时不清空内容（可保留）
+      postModal.addEventListener("hidden.bs.modal", () => {
+        // 可选清空
+      });
+    </script>
+  </body>
+</html>

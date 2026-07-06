@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>园区管理 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <div class="flex-grow-1 p-4">
+        <h3>园区管理</h3>
+        <button
+          class="btn btn-primary btn-sm mb-3"
+          data-bs-toggle="modal"
+          data-bs-target="#campusModal"
+          onclick="clearCampusForm()"
+        >
+          新增园区
+        </button>
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>名称</th>
+              <th>上级园区</th>
+              <th>描述</th>
+              <th>创建时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="campusTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 新增/编辑模态框 -->
+    <div class="modal fade" id="campusModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="campusModalTitle">新增园区</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="editCampusId" />
+            <div class="mb-2">
+              <label>园区名称</label>
+              <input
+                type="text"
+                class="form-control"
+                id="campusName"
+                required
+              />
+            </div>
+            <div class="mb-2">
+              <label>上级园区（可选）</label>
+              <select class="form-select" id="campusParentId">
+                <option value="">无（一级园区）</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <label>园区描述</label>
+              <textarea
+                class="form-control"
+                id="campusDesc"
+                rows="3"
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              取消
+            </button>
+            <button type="button" class="btn btn-primary" id="saveCampusBtn">
+              保存
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      async function loadCampuses() {
+        const res = await api("/api/admin/campuses");
+        if (res.code !== 200) return alert("加载失败");
+        const campuses = res.data;
+        // 渲染表格
+        const tbody = document.getElementById("campusTableBody");
+        tbody.innerHTML = campuses
+          .map(
+            (c) => `
+    <tr>
+      <td>${c.id}</td>
+      <td>${c.name}</td>
+      <td>${c.parent_name || "顶级"}</td>
+      <td>${c.description || "-"}</td>
+      <td>${new Date(c.created_at).toLocaleString()}</td>
+      <td>
+        <button class="btn btn-sm btn-info" onclick="editCampus(${c.id})">编辑</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteCampus(${c.id})">删除</button>
+      </td>
+    </tr>
+  `,
+          )
+          .join("");
+
+        // 更新上级园区下拉框
+        const sel = document.getElementById("campusParentId");
+        sel.innerHTML = '<option value="">无（一级园区）</option>';
+        campuses
+          .filter((c) => !c.parent_id)
+          .forEach((c) => {
+            sel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+          });
+      }
+
+      function clearCampusForm() {
+        document.getElementById("editCampusId").value = "";
+        document.getElementById("campusName").value = "";
+        document.getElementById("campusParentId").value = "";
+        document.getElementById("campusDesc").value = "";
+        document.getElementById("campusModalTitle").innerText = "新增园区";
+      }
+
+      async function editCampus(id) {
+        const res = await api(`/api/admin/campuses/${id}`);
+        if (res.code !== 200) return alert("获取园区失败");
+        const campus = res.data;
+        document.getElementById("editCampusId").value = campus.id;
+        document.getElementById("campusName").value = campus.name;
+        document.getElementById("campusParentId").value =
+          campus.parent_id || "";
+        document.getElementById("campusDesc").value = campus.description || "";
+        document.getElementById("campusModalTitle").innerText = "编辑园区";
+        new bootstrap.Modal(document.getElementById("campusModal")).show();
+      }
+
+      document
+        .getElementById("saveCampusBtn")
+        .addEventListener("click", async () => {
+          const id = document.getElementById("editCampusId").value;
+          const name = document.getElementById("campusName").value.trim();
+          const parent_id =
+            document.getElementById("campusParentId").value || null;
+          const description = document
+            .getElementById("campusDesc")
+            .value.trim();
+          if (!name) return alert("名称不能为空");
+          const url = id ? `/api/admin/campuses/${id}` : "/api/admin/campuses";
+          const method = id ? "PUT" : "POST";
+          const body = JSON.stringify({
+            name,
+            parent_id: parent_id ? parseInt(parent_id) : null,
+            description,
+          });
+          const res = await api(url, { method, body });
+          if (res.code === 200) {
+            alert("保存成功");
+            bootstrap.Modal.getInstance(
+              document.getElementById("campusModal"),
+            ).hide();
+            loadCampuses();
+          } else {
+            alert(res.msg || "操作失败");
+          }
+        });
+
+      async function deleteCampus(id) {
+        if (!confirm("删除园区将影响关联用户，确定吗？")) return;
+        const res = await api(`/api/admin/campuses/${id}`, {
+          method: "DELETE",
+        });
+        if (res.code === 200) {
+          alert("已删除");
+          loadCampuses();
+        } else {
+          alert(res.msg || "删除失败");
+        }
+      }
+
+      loadCampuses();
+    </script>
+  </body>
+</html>

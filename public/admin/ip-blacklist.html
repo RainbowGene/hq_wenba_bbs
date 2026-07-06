@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>IP黑名单 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <div class="flex-grow-1 p-4">
+        <h3>IP黑名单管理</h3>
+        <button
+          class="btn btn-danger btn-sm mb-3"
+          data-bs-toggle="modal"
+          data-bs-target="#addIpModal"
+        >
+          封禁IP
+        </button>
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>IP地址</th>
+              <th>封禁原因</th>
+              <th>封禁时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="blacklistTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 新增封禁模态框 -->
+    <div class="modal fade" id="addIpModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">封禁IP</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-2">
+              <label>IP地址</label>
+              <input type="text" class="form-control" id="newIp" required />
+            </div>
+            <div class="mb-2">
+              <label>封禁原因（可选）</label>
+              <input type="text" class="form-control" id="newReason" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              取消
+            </button>
+            <button type="button" class="btn btn-danger" id="addIpBtn">
+              确认封禁
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      async function loadBlacklist() {
+        const res = await api("/api/admin/ip-blacklist");
+        if (res.code !== 200) return alert("加载失败");
+        const tbody = document.getElementById("blacklistTableBody");
+        tbody.innerHTML =
+          res.data
+            .map(
+              (item) => `
+    <tr>
+      <td>${item.id}</td>
+      <td>${item.ip}</td>
+      <td>${item.reason || "-"}</td>
+      <td>${new Date(item.created_at).toLocaleString()}</td>
+      <td>
+        <button class="btn btn-sm btn-success" onclick="removeIp(${item.id})">解封</button>
+      </td>
+    </tr>
+  `,
+            )
+            .join("") ||
+          '<tr><td colspan="5" class="text-center">暂无封禁IP</td></tr>';
+      }
+
+      // 添加封禁
+      document
+        .getElementById("addIpBtn")
+        .addEventListener("click", async () => {
+          const ip = document.getElementById("newIp").value.trim();
+          const reason = document.getElementById("newReason").value.trim();
+          if (!ip) return alert("请输入IP");
+          const res = await api("/api/admin/ip-blacklist", {
+            method: "POST",
+            body: JSON.stringify({ ip, reason }),
+          });
+          if (res.code === 200) {
+            alert("已封禁");
+            bootstrap.Modal.getInstance(
+              document.getElementById("addIpModal"),
+            ).hide();
+            loadBlacklist();
+          } else {
+            alert(res.msg || "操作失败");
+          }
+        });
+
+      // 解封
+      async function removeIp(id) {
+        if (!confirm("确定解封该IP？")) return;
+        const res = await api(`/api/admin/ip-blacklist/${id}`, {
+          method: "DELETE",
+        });
+        if (res.code === 200) {
+          alert("已解封");
+          loadBlacklist();
+        } else alert(res.msg);
+      }
+
+      loadBlacklist();
+    </script>
+  </body>
+</html>

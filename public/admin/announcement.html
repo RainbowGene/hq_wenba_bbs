@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>公告管理 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <div class="flex-grow-1 p-4">
+        <h3>公告管理</h3>
+        <button
+          class="btn btn-primary btn-sm mb-3"
+          data-bs-toggle="modal"
+          data-bs-target="#announcementModal"
+          onclick="clearForm()"
+        >
+          发布公告
+        </button>
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>标题</th>
+              <th>封面</th>
+              <th>类型</th>
+              <th>状态</th>
+              <th>发布时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="announcementTableBody"></tbody>
+        </table>
+        <div id="paginationContainer"></div>
+      </div>
+    </div>
+
+    <!-- 发布/编辑模态框 -->
+    <div class="modal fade" id="announcementModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="modalTitle">发布公告</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="editId" />
+            <div class="mb-2">
+              <label>标题</label>
+              <input type="text" class="form-control" id="title" required />
+            </div>
+            <div class="mb-2">
+              <label>内容</label>
+              <textarea class="form-control" id="content" rows="5"></textarea>
+            </div>
+            <div class="mb-2">
+              <label>封面图片（可选）</label>
+              <input
+                type="file"
+                class="form-control"
+                id="coverImageInput"
+                accept="image/*"
+              />
+              <img
+                id="coverPreview"
+                src=""
+                style="max-width: 200px; display: none"
+                class="mt-2"
+              />
+            </div>
+            <div class="mb-2">
+              <label>跳转链接（可选）</label>
+              <input type="text" class="form-control" id="linkUrl" />
+            </div>
+            <div class="mb-2 form-check">
+              <input type="checkbox" class="form-check-input" id="isCarousel" />
+              <label class="form-check-label" for="isCarousel"
+                >显示在首页轮播区</label
+              >
+            </div>
+            <div class="mb-2 form-check">
+              <input
+                type="checkbox"
+                class="form-check-input"
+                id="isActive"
+                checked
+              />
+              <label class="form-check-label" for="isActive">启用</label>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              id="saveAnnouncementBtn"
+            >
+              保存
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      let currentPage = 1;
+      const pageSize = 10;
+      let coverFile = null;
+
+      async function loadAnnouncements(page = 1) {
+        currentPage = page;
+        const res = await api(
+          `/api/admin/announcements?page=${page}&size=${pageSize}`,
+        );
+        if (res.code !== 200) return alert(res.msg);
+        const { list, total } = res.data;
+        const tbody = document.getElementById("announcementTableBody");
+        tbody.innerHTML =
+          list
+            .map(
+              (a) => `
+    <tr>
+      <td>${a.id}</td>
+      <td>${a.title}</td>
+      <td>${a.cover_image ? `<img src="${a.cover_image}" height="40">` : "无"}</td>
+      <td>${a.is_carousel ? "轮播" : "公告"}</td>
+      <td>${a.is_active ? "启用" : "停用"}</td>
+      <td>${new Date(a.created_at).toLocaleString()}</td>
+      <td>
+        <button class="btn btn-sm btn-info" onclick="editAnnouncement(${a.id})">编辑</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteAnnouncement(${a.id})">删除</button>
+      </td>
+    </tr>
+  `,
+            )
+            .join("") ||
+          '<tr><td colspan="7" class="text-center">暂无公告</td></tr>';
+        renderPagination(
+          document.getElementById("paginationContainer"),
+          page,
+          total,
+          pageSize,
+          loadAnnouncements,
+        );
+      }
+
+      function clearForm() {
+        document.getElementById("editId").value = "";
+        document.getElementById("title").value = "";
+        document.getElementById("content").value = "";
+        document.getElementById("linkUrl").value = "";
+        document.getElementById("isCarousel").checked = false;
+        document.getElementById("isActive").checked = true;
+        document.getElementById("coverPreview").style.display = "none";
+        coverFile = null;
+        document.getElementById("modalTitle").innerText = "发布公告";
+      }
+
+      // 编辑公告
+      async function editAnnouncement(id) {
+        const res = await api(`/api/admin/announcements/${id}`);
+        if (res.code !== 200) return alert("获取公告失败");
+        const ann = res.data;
+        document.getElementById("editId").value = ann.id;
+        document.getElementById("title").value = ann.title;
+        document.getElementById("content").value = ann.content || "";
+        document.getElementById("linkUrl").value = ann.link_url || "";
+        document.getElementById("isCarousel").checked = ann.is_carousel === 1;
+        document.getElementById("isActive").checked = ann.is_active === 1;
+        if (ann.cover_image) {
+          document.getElementById("coverPreview").src = ann.cover_image;
+          document.getElementById("coverPreview").style.display = "block";
+        } else {
+          document.getElementById("coverPreview").style.display = "none";
+        }
+        coverFile = null;
+        document.getElementById("modalTitle").innerText = "编辑公告";
+        new bootstrap.Modal(
+          document.getElementById("announcementModal"),
+        ).show();
+      }
+
+      // 监听文件选择
+      document
+        .getElementById("coverImageInput")
+        .addEventListener("change", function (e) {
+          coverFile = e.target.files[0];
+          if (coverFile) {
+            const reader = new FileReader();
+            reader.onload = function (ev) {
+              document.getElementById("coverPreview").src = ev.target.result;
+              document.getElementById("coverPreview").style.display = "block";
+            };
+            reader.readAsDataURL(coverFile);
+          }
+        });
+
+      // 保存公告（含图片上传）
+      document
+        .getElementById("saveAnnouncementBtn")
+        .addEventListener("click", async () => {
+          const id = document.getElementById("editId").value;
+          const formData = new FormData();
+          formData.append(
+            "title",
+            document.getElementById("title").value.trim(),
+          );
+          formData.append(
+            "content",
+            document.getElementById("content").value.trim(),
+          );
+          formData.append(
+            "link_url",
+            document.getElementById("linkUrl").value.trim(),
+          );
+          formData.append(
+            "is_carousel",
+            document.getElementById("isCarousel").checked ? "1" : "0",
+          );
+          formData.append(
+            "is_active",
+            document.getElementById("isActive").checked ? "1" : "0",
+          );
+          if (coverFile) formData.append("cover_image", coverFile);
+
+          const url = id
+            ? `/api/admin/announcements/${id}`
+            : "/api/admin/announcements";
+          const method = id ? "PUT" : "POST";
+          // 使用fetch，不设置Content-Type，让浏览器自动处理multipart
+          const token = getToken();
+          const res = await fetch(url, {
+            method,
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+          });
+          const json = await res.json();
+          if (json.code === 200) {
+            alert("保存成功");
+            bootstrap.Modal.getInstance(
+              document.getElementById("announcementModal"),
+            ).hide();
+            loadAnnouncements(currentPage);
+          } else {
+            alert(json.msg || "操作失败");
+          }
+        });
+
+      // 删除公告
+      async function deleteAnnouncement(id) {
+        if (!confirm("确定删除该公告？")) return;
+        const res = await api(`/api/admin/announcements/${id}`, {
+          method: "DELETE",
+        });
+        if (res.code === 200) {
+          alert("已删除");
+          loadAnnouncements(currentPage);
+        } else alert(res.msg);
+      }
+
+      loadAnnouncements();
+    </script>
+  </body>
+</html>

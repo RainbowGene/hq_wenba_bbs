@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>栏目分类管理 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <div class="flex-grow-1 p-4">
+        <h3>栏目分类管理</h3>
+        <button
+          class="btn btn-primary btn-sm mb-3"
+          data-bs-toggle="modal"
+          data-bs-target="#categoryModal"
+          onclick="clearForm()"
+        >
+          新增分类
+        </button>
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>名称</th>
+              <th>上级分类</th>
+              <th>创建时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="categoryTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 新增/编辑模态框 -->
+    <div class="modal fade" id="categoryModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="modalTitle">新增分类</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="editId" />
+            <div class="mb-2">
+              <label>分类名称</label>
+              <input type="text" class="form-control" id="catName" required />
+            </div>
+            <div class="mb-2">
+              <label>上级分类（可选，选择为一级分类）</label>
+              <select class="form-select" id="parentId">
+                <option value="">无（一级分类）</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              取消
+            </button>
+            <button type="button" class="btn btn-primary" id="saveCategoryBtn">
+              保存
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      // 加载所有分类
+      async function loadCategories() {
+        const res = await api("/api/admin/categories");
+        if (res.code !== 200) return alert("加载失败");
+        const categories = res.data;
+        // 渲染表格（显示所有分类，包含父级信息）
+        const tbody = document.getElementById("categoryTableBody");
+        tbody.innerHTML = categories
+          .map(
+            (c) => `
+    <tr>
+      <td>${c.id}</td>
+      <td>${c.name}</td>
+      <td>${c.parent_name || "顶级"}</td>
+      <td>${new Date(c.created_at).toLocaleString()}</td>
+      <td>
+        <button class="btn btn-sm btn-info" onclick="editCategory(${c.id})">编辑</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteCategory(${c.id})">删除</button>
+      </td>
+    </tr>
+  `,
+          )
+          .join("");
+
+        // 同时更新模态框中的上级分类下拉框
+        const parentSel = document.getElementById("parentId");
+        parentSel.innerHTML = '<option value="">无（一级分类）</option>';
+        categories.forEach((c) => {
+          // 只将一级分类（parent_id为null）作为可选父级
+          if (!c.parent_id) {
+            parentSel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+          }
+        });
+      }
+
+      // 清空表单（新增）
+      function clearForm() {
+        document.getElementById("editId").value = "";
+        document.getElementById("catName").value = "";
+        document.getElementById("parentId").value = "";
+        document.getElementById("modalTitle").innerText = "新增分类";
+      }
+
+      // 编辑分类
+      async function editCategory(id) {
+        const res = await api(`/api/admin/categories/${id}`);
+        if (res.code !== 200) return alert("获取分类信息失败");
+        const cat = res.data;
+        document.getElementById("editId").value = cat.id;
+        document.getElementById("catName").value = cat.name;
+        document.getElementById("parentId").value = cat.parent_id || "";
+        document.getElementById("modalTitle").innerText = "编辑分类";
+        new bootstrap.Modal(document.getElementById("categoryModal")).show();
+      }
+
+      // 保存（新增或编辑）
+      document
+        .getElementById("saveCategoryBtn")
+        .addEventListener("click", async () => {
+          const id = document.getElementById("editId").value;
+          const name = document.getElementById("catName").value.trim();
+          const parent_id = document.getElementById("parentId").value || null;
+          if (!name) return alert("名称不能为空");
+          const url = id
+            ? `/api/admin/categories/${id}`
+            : "/api/admin/categories";
+          const method = id ? "PUT" : "POST";
+          const body = JSON.stringify({
+            name,
+            parent_id: parent_id ? parseInt(parent_id) : null,
+          });
+          const res = await api(url, { method, body });
+          if (res.code === 200) {
+            alert("保存成功");
+            bootstrap.Modal.getInstance(
+              document.getElementById("categoryModal"),
+            ).hide();
+            loadCategories();
+          } else {
+            alert(res.msg || "操作失败");
+          }
+        });
+
+      // 删除分类
+      async function deleteCategory(id) {
+        if (!confirm("删除分类将影响相关帖子，确定吗？")) return;
+        const res = await api(`/api/admin/categories/${id}`, {
+          method: "DELETE",
+        });
+        if (res.code === 200) {
+          alert("已删除");
+          loadCategories();
+        } else {
+          alert(res.msg || "删除失败");
+        }
+      }
+
+      // 初始化
+      loadCategories();
+    </script>
+  </body>
+</html>

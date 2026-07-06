@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>分类帖子 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <nav class="navbar navbar-dark bg-primary">
+      <div class="container"><a class="navbar-brand" href="/">问吧</a></div>
+    </nav>
+    <div class="container mt-3">
+      <h4 id="categoryTitle">分类帖子</h4>
+      <div id="postList" class="list-group"></div>
+      <div id="paginationContainer" class="mt-3"></div>
+    </div>
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      const urlParams = new URLSearchParams(window.location.search);
+      const catId = urlParams.get("cat");
+      if (!catId) window.location.href = "/";
+      let currentPage = 1;
+      async function loadPosts(page = 1) {
+        const res = await api(
+          `/api/public/posts-by-category/${catId}?page=${page}&size=20`,
+        );
+        if (res.code !== 200) return;
+        const { list, total } = res.data;
+        document.getElementById("postList").innerHTML = list
+          .map(
+            (p) => `
+      <a href="/post-detail.html?id=${p.id}" class="list-group-item list-group-item-action">
+        ${p.title} <small class="text-muted">${p.nickname} · ${p.bounty}积分</small>
+      </a>
+    `,
+          )
+          .join("");
+        renderPagination(
+          document.getElementById("paginationContainer"),
+          page,
+          total,
+          20,
+          loadPosts,
+        );
+      }
+      // 获取分类名称
+      (async () => {
+        const res = await api("/api/public/categories");
+        if (res.code === 200) {
+          const findName = (list, id) => {
+            for (const c of list) {
+              if (c.id == id) return c.name;
+              if (c.children) {
+                const found = findName(c.children, id);
+                if (found) return found;
+              }
+            }
+            return "";
+          };
+          const name = findName(res.data, catId);
+          document.getElementById("categoryTitle").innerText =
+            `分类：${name || "未知"}`;
+        }
+      })();
+      loadPosts();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>登录日志 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <div class="d-flex">
+      <div class="flex-grow-1 p-4">
+        <h3>会员登录日志</h3>
+        <div class="row mb-3">
+          <div class="col-md-3">
+            <input
+              type="text"
+              class="form-control"
+              id="searchUsername"
+              placeholder="账号"
+            />
+          </div>
+          <div class="col-md-3">
+            <input
+              type="text"
+              class="form-control"
+              id="searchIp"
+              placeholder="登录IP"
+            />
+          </div>
+          <div class="col-md-2">
+            <input type="date" class="form-control" id="searchDate" />
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-primary" onclick="searchLogs()">搜索</button>
+          </div>
+        </div>
+        <table class="table table-bordered table-hover">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>账号</th>
+              <th>用户ID</th>
+              <th>登录IP</th>
+              <th>登录时间</th>
+            </tr>
+          </thead>
+          <tbody id="logsTableBody"></tbody>
+        </table>
+        <div id="paginationContainer"></div>
+      </div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      let currentPage = 1;
+      const pageSize = 20;
+
+      async function loadLogs(page = 1, filters = {}) {
+        currentPage = page;
+        const params = new URLSearchParams({
+          page,
+          size: pageSize,
+          ...filters,
+        });
+        const res = await api(`/api/admin/login-logs?${params}`);
+        if (res.code !== 200) return alert(res.msg);
+        const { list, total } = res.data;
+        const tbody = document.getElementById("logsTableBody");
+        tbody.innerHTML =
+          list
+            .map(
+              (log) => `
+    <tr>
+      <td>${log.id}</td>
+      <td>${log.username}</td>
+      <td>${log.user_id}</td>
+      <td>${log.ip}</td>
+      <td>${new Date(log.login_time).toLocaleString()}</td>
+    </tr>
+  `,
+            )
+            .join("") ||
+          '<tr><td colspan="5" class="text-center">暂无记录</td></tr>';
+        renderPagination(
+          document.getElementById("paginationContainer"),
+          page,
+          total,
+          pageSize,
+          (p) => loadLogs(p, filters),
+        );
+      }
+
+      function searchLogs() {
+        const filters = {
+          username: document.getElementById("searchUsername").value.trim(),
+          ip: document.getElementById("searchIp").value.trim(),
+          date: document.getElementById("searchDate").value,
+        };
+        Object.keys(filters).forEach((k) => {
+          if (!filters[k]) delete filters[k];
+        });
+        loadLogs(1, filters);
+      }
+
+      loadLogs();
+    </script>
+  </body>
+</html>
