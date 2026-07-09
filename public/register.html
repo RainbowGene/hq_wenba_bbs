@@ -4,9 +4,6 @@
     <meta charset="UTF-8" />
     <title>注册 - 问吧</title>
     <link rel="stylesheet" href="/css/bootstrap.min.css" />
-    <script src="/js/bootstrap.bundle.min.js"></script>
-    <script src="/js/modal-alert.js"></script>
-    <script src="/js/common.js"></script>
   </head>
   <body>
     <div class="container mt-5">
@@ -14,19 +11,19 @@
         <div class="col-md-6">
           <h3>新用户注册</h3>
           <form id="registerForm">
-            <div class="mb-2">
-              <label>账号（1大写字母+7位数字）</label>
+            <div class="mb-3">
+              <label class="form-label">账号（1大写字母 + 7位数字）</label>
               <input
                 type="text"
                 class="form-control"
                 name="username"
-                placeholder="如A1234567"
+                placeholder="如 A1234567"
                 required
                 pattern="[A-Z]\d{7}"
               />
             </div>
-            <div class="mb-2">
-              <label>密码（6-12字符）</label>
+            <div class="mb-3">
+              <label class="form-label">密码（6-12字符）</label>
               <input
                 type="password"
                 class="form-control"
@@ -36,8 +33,8 @@
                 maxlength="12"
               />
             </div>
-            <div class="mb-2">
-              <label>昵称（最多6个汉字）</label>
+            <div class="mb-3">
+              <label class="form-label">昵称（最多6个汉字）</label>
               <input
                 type="text"
                 class="form-control"
@@ -46,8 +43,8 @@
                 maxlength="18"
               />
             </div>
-            <div class="mb-2">
-              <label>所属园区</label>
+            <div class="mb-3">
+              <label class="form-label">所属园区</label>
               <select
                 class="form-select"
                 name="campus_id"
@@ -55,39 +52,87 @@
                 required
               ></select>
             </div>
-            <div class="mb-2">
-              <label>身份证号</label>
+            <div class="mb-3">
+              <label class="form-label">身份证号</label>
               <input type="text" class="form-control" name="id_card" required />
             </div>
-            <div class="mb-2">
-              <label>联系方式（电话/邮箱）</label>
+            <div class="mb-3">
+              <label class="form-label">联系方式（电话/邮箱/内部邮箱）</label>
               <input type="text" class="form-control" name="contact" required />
             </div>
-            <div class="mb-2">
-              <label>密保问题</label>
-              <input
-                type="text"
-                class="form-control"
-                name="security_question"
-                required
-              />
-            </div>
-            <div class="mb-2">
-              <label>密保答案</label>
+            <!-- 密保问题固定为身份证后6位，隐藏域 -->
+            <input type="hidden" name="security_question" value="身份证后6位" />
+            <div class="mb-3">
+              <label class="form-label"
+                >密保答案（请再次输入身份证后6位）</label
+              >
               <input
                 type="text"
                 class="form-control"
                 name="security_answer"
                 required
+                maxlength="6"
+                placeholder="身份证后6位"
               />
             </div>
-            <button type="submit" class="btn btn-primary w-100">注册</button>
+            <div class="mb-3">
+              <label class="form-label">验证码</label>
+              <div class="input-group">
+                <input
+                  type="text"
+                  class="form-control"
+                  name="captchaInput"
+                  required
+                  maxlength="4"
+                  placeholder="输入验证码"
+                />
+                <img
+                  id="captchaImage"
+                  src=""
+                  alt="验证码"
+                  title="点击刷新"
+                  style="width: 100px; cursor: pointer"
+                  class="ms-2"
+                />
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary w-100 mt-3">
+              注册
+            </button>
           </form>
-          <div class="mt-2"><a href="/login.html">已有账号？去登录</a></div>
+          <div class="mt-3 text-center">
+            <a href="/login.html">已有账号？去登录</a>
+          </div>
         </div>
       </div>
     </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/modal-alert.js"></script>
+    <script src="/js/common.js"></script>
     <script>
+      let captchaToken = "";
+
+      // 刷新验证码
+      async function refreshCaptcha() {
+        try {
+          const res = await api("/api/auth/captcha");
+          if (res.code === 200) {
+            captchaToken = res.data.captchaToken;
+            const svgData = res.data.svg;
+            const svgBlob = new Blob([svgData], { type: "image/svg+xml" });
+            const url = URL.createObjectURL(svgBlob);
+            document.getElementById("captchaImage").src = url;
+          }
+        } catch (e) {
+          console.error("获取验证码失败", e);
+        }
+      }
+      refreshCaptcha();
+      document
+        .getElementById("captchaImage")
+        .addEventListener("click", refreshCaptcha);
+
       // 加载园区选项
       fetch("/api/public/campuses")
         .then((r) => r.json())
@@ -99,25 +144,48 @@
             });
           }
         });
-      // 注册表单提交
+
+      // 注册提交
       document
         .getElementById("registerForm")
         .addEventListener("submit", async (e) => {
           e.preventDefault();
           const form = e.target;
-          const data = Object.fromEntries(new FormData(form));
-          // 前端校验昵称汉字长度（简化判断）
+          const formData = new FormData(form);
+          const data = Object.fromEntries(formData);
+
+          // 验证码检查
+          if (!captchaToken) {
+            ModalAlert.error("验证码未加载，请刷新重试");
+            return;
+          }
+          if (!data.captchaInput) {
+            ModalAlert.error("请输入验证码");
+            return;
+          }
+
+          // 昵称长度前端简单判断
           const nickLen = data.nickname.replace(/[^\x00-\xff]/g, "aa").length;
-          if (nickLen > 6 * 3) return alert("昵称最多6个汉字");
+          if (nickLen > 6 * 3) {
+            ModalAlert.error("昵称最多6个汉字");
+            return;
+          }
+
+          // 附上验证码 token
+          data.captchaToken = captchaToken;
+          delete data.captchaInput; // 不直接提交明文
+
           const res = await api("/api/auth/register", {
             method: "POST",
             body: JSON.stringify(data),
           });
+
           if (res.code === 200) {
-            alert("注册成功！赠送300积分");
+            ModalAlert.success("注册成功！赠送300积分，请登录");
             window.location.href = "/login.html";
           } else {
-            alert(res.msg);
+            ModalAlert.error(res.msg);
+            refreshCaptcha();
           }
         });
     </script>

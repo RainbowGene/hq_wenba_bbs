@@ -9,8 +9,6 @@ const { verifyToken } = require("../middleware/auth");
 const { generateCaptcha, verifyCaptcha } = require("../utils/captcha");
 
 const secret = "wenba_secret_key";
-
-// 账号格式正则
 const USERNAME_REG = /^[A-Z]\d{7}$/;
 const PASSWORD_MIN = 6,
   PASSWORD_MAX = 12;
@@ -25,7 +23,7 @@ router.get("/captcha", (req, res) => {
   }
 });
 
-// ========== 注册 ==========
+// 注册
 router.post("/register", async (req, res) => {
   try {
     let {
@@ -37,7 +35,9 @@ router.post("/register", async (req, res) => {
       contact,
       security_question,
       security_answer,
+      captchaToken,
     } = req.body;
+
     // 基础校验
     if (!USERNAME_REG.test(username))
       return res.json({
@@ -48,21 +48,27 @@ router.post("/register", async (req, res) => {
       return res.json({ code: 400, msg: "密码长度6-12字符" });
     if (nickname.replace(/[^\x00-\xff]/g, "aa").length > 6 * 3)
       return res.json({ code: 400, msg: "昵称最长6个汉字" });
-    if (
-      !campus_id ||
-      !id_card ||
-      !contact ||
-      !security_question ||
-      !security_answer
-    )
+    if (!campus_id || !id_card || !contact || !security_answer)
       return res.json({ code: 400, msg: "请填写所有必填项" });
+
+    // 验证码校验
+    if (!captchaToken) return res.json({ code: 400, msg: "验证码缺失" });
+    // 注意：前端可能传入 captchaInput 和 captchaToken，我们这里统一接收 captchaToken，并在 verifyCaptcha 中比对
+    // 但我们的 verifyCaptcha 需要 captchaToken 和用户输入，因此前端需将输入的验证码也传来。
+    // 前端已将 captchaToken 和 captchaInput 分开传递，这里修正：实际我们需要 captchaToken 和用户输入的验证码。
+    // 因此还是从 req.body 中取 captchaToken 和 captchaInput。
+    const { captchaInput } = req.body;
+    if (!captchaInput || !verifyCaptcha(captchaToken, captchaInput))
+      return res.json({ code: 400, msg: "验证码错误或已过期" });
+
+    // 强制设置密保问题为“身份证后6位”
+    security_question = "身份证后6位";
 
     // XSS 过滤
     username = escapeHtml(username);
     nickname = escapeHtml(nickname);
     security_question = escapeHtml(security_question);
     security_answer = escapeHtml(security_answer);
-    // 敏感词过滤
     nickname = filterSensitiveWords(nickname, config.sensitiveWords);
 
     // 检查账号唯一性
@@ -90,7 +96,6 @@ router.post("/register", async (req, res) => {
         ],
       );
       const userId = result.insertId;
-      // 积分日志
       await conn.query(
         "INSERT INTO points_log (user_id, change_amount, type, description) VALUES (?,?,?,?)",
         [userId, config.points.registerReward, "register", "注册奖励"],
@@ -200,26 +205,28 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// 找回密码 - 验证密保问题
+// 找回密码 - 验证密保（固定问题“身份证后6位”）
 router.post("/forgot-password/verify", async (req, res) => {
-  const { username, security_question, security_answer } = req.body;
+  const { username, security_answer } = req.body;
+  if (!username || !security_answer)
+    return res.json({ code: 400, msg: "账号和密保答案不能为空" });
   try {
+    // 查询用户，密保问题固定为身份证后6位
     const [rows] = await pool.query(
-      "SELECT security_question, security_answer FROM users WHERE username=?",
-      [username],
+      "SELECT security_question, security_answer FROM users WHERE username = ? AND security_question = ?",
+      [username, "身份证后6位"],
     );
-    if (rows.length === 0) return res.json({ code: 400, msg: "账号不存在" });
+    if (rows.length === 0)
+      return res.json({ code: 400, msg: "账号不存在或密保问题不匹配" });
     const user = rows[0];
-    if (user.security_question !== security_question)
-      return res.json({ code: 400, msg: "密保问题不匹配" });
     if (user.security_answer !== security_answer)
       return res.json({ code: 400, msg: "密保答案错误" });
-    // 生成一次性 token 用于重置密码，有效期10分钟
     const resetToken = jwt.sign({ username, action: "reset_pwd" }, secret, {
       expiresIn: "10m",
     });
     res.json({ code: 200, msg: "验证通过", data: { resetToken } });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ code: 500, msg: "服务器错误" });
   }
 });

@@ -4,9 +4,27 @@
     <meta charset="UTF-8" />
     <title>个人中心 - 问吧</title>
     <link rel="stylesheet" href="/css/bootstrap.min.css" />
-    <script src="/js/bootstrap.bundle.min.js"></script>
-    <script src="/js/modal-alert.js"></script>
-    <script src="/js/common.js"></script>
+    <style>
+      .red-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        background: red;
+        border-radius: 50%;
+        margin-left: 4px;
+      }
+      .modal-body {
+        max-height: 60vh;
+        overflow-y: auto;
+      }
+      .text-truncate {
+        max-width: 200px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: inline-block;
+      }
+    </style>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
@@ -18,7 +36,6 @@
       </div>
     </nav>
     <div class="container mt-3">
-      <!-- 选项卡部分保持不变 -->
       <ul class="nav nav-tabs" id="userTabs" role="tablist">
         <li class="nav-item" role="presentation">
           <button
@@ -82,6 +99,7 @@
                 <th>回复内容</th>
                 <th>对应帖子</th>
                 <th>时间</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody id="replyTableBody"></tbody>
@@ -92,6 +110,7 @@
         </div>
         <div class="tab-pane fade" id="profile">
           <h5>修改昵称</h5>
+          <p>当前昵称：<strong id="currentNickname">加载中...</strong></p>
           <input
             type="text"
             class="form-control mb-2"
@@ -118,7 +137,7 @@
       </div>
     </div>
 
-    <!-- 审核留言模态框 -->
+    <!-- 审核回复模态框 -->
     <div class="modal fade" id="replyModal" tabindex="-1">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -131,146 +150,326 @@
       </div>
     </div>
 
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/modal-alert.js"></script>
+    <script src="/js/common.js"></script>
     <script>
-      // 原有加载逻辑不变（loadQuestions, loadReplies 等）
-      async function loadQuestions() {
-        const res = await api("/api/user/questions");
-        if (res.code === 200) {
-          const tbody = document.getElementById("questionTableBody");
-          tbody.innerHTML = res.data.list
-            .map(
-              (q) => `
-          <tr>
-            <td>${q.title}</td>
-            <td>${q.bounty}</td>
-            <td>${new Date(q.created_at).toLocaleString()}</td>
-            <td>
-              <button class="btn btn-sm btn-info" onclick="viewReplies(${q.id})">审核留言</button>
-              <a class="btn btn-sm btn-primary" href="/post-detail.html?id=${q.id}">查看</a>
-            </td>
-          </tr>
-        `,
-            )
-            .join("");
+      const dismissedDots = new Set();
+      let replyModalInstance = null,
+        currentPostId = null,
+        lastScrollTop = 0,
+        actionLock = false;
+
+      async function withLock(fn) {
+        if (actionLock) return;
+        actionLock = true;
+        try {
+          await fn();
+        } catch (e) {
+          console.error(e);
+        } finally {
+          actionLock = false;
         }
       }
 
-      window.viewReplies = async (postId) => {
-        const res = await api(`/api/user/questions/${postId}/replies`);
-        if (res.code === 200) {
-          let html = "";
-          res.data.forEach((r) => {
-            html += `<div class="border p-2 mb-2">
-            <strong>${r.nickname}</strong> (${new Date(r.created_at).toLocaleString()}): 
-            <p>${r.content}</p>
-            ${
-              r.is_approved_by_owner
-                ? '<span class="badge bg-success">已审核</span>'
-                : `<button class="btn btn-sm btn-success" onclick="approveReply(${postId},${r.id})">审核通过</button>
-               <button class="btn btn-sm btn-danger" onclick="deleteReply(${postId},${r.id})">删除</button>
-               <button class="btn btn-sm btn-warning" onclick="setBest(${postId},${r.id})">设为最佳</button>`
-            }
-          </div>`;
+      function getReplyModal() {
+        if (!replyModalInstance) {
+          const modalEl = document.getElementById("replyModal");
+          replyModalInstance = new bootstrap.Modal(modalEl, {
+            backdrop: true,
+            keyboard: true,
           });
-          document.getElementById("replyModalBody").innerHTML =
-            html || "暂无留言";
-          new bootstrap.Modal(document.getElementById("replyModal")).show();
+          modalEl.addEventListener("hidden.bs.modal", () => {
+            currentPostId = null;
+            lastScrollTop = 0;
+          });
         }
+        return replyModalInstance;
+      }
+
+      function saveScrollPosition() {
+        const mb = document.getElementById("replyModalBody");
+        if (mb) lastScrollTop = mb.scrollTop;
+      }
+      function restoreScrollPosition() {
+        const mb = document.getElementById("replyModalBody");
+        if (mb) mb.scrollTop = lastScrollTop;
+      }
+
+      async function loadRepliesToModal(postId) {
+        const res = await api(`/api/user/questions/${postId}/replies`);
+        if (res.code !== 200) {
+          ModalAlert.error("加载回复失败");
+          return;
+        }
+        const replies = res.data;
+        const hasBest = replies.some((r) => r.is_best === 1);
+        const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+        const currentUserId = currentUser.id;
+        const modalBody = document.getElementById("replyModalBody");
+        let html = "";
+        replies.forEach((r) => {
+          if (r.is_best) {
+            html += `<div class="border p-2 mb-2 reply-item" data-reply-id="${r.id}">
+            <strong>${r.nickname}</strong> <span class="badge bg-success">最佳答案</span>
+            <div>${r.content}</div>
+            <small class="text-muted">${new Date(r.created_at).toLocaleString()}</small></div>`;
+            return;
+          }
+          const isApproved = r.is_approved_by_owner === 1;
+          let btns = isApproved
+            ? `<button class="btn btn-sm btn-outline-secondary" onclick="setUnapproved(${postId},${r.id})">取消通过</button>`
+            : `<button class="btn btn-sm btn-success" onclick="approveReply(${postId},${r.id})">通过</button>
+             <button class="btn btn-sm btn-danger" onclick="deleteReply(${postId},${r.id})">删除</button>`;
+          if (isApproved && !hasBest && r.user_id !== currentUserId) {
+            btns += `<button class="btn btn-sm btn-warning" onclick="setBest(${postId},${r.id})">设为最佳</button>`;
+          }
+          html += `<div class="border p-2 mb-2 reply-item" data-reply-id="${r.id}">
+          <strong>${r.nickname}</strong> (${new Date(r.created_at).toLocaleString()}): 
+          <div>${r.content}</div><div class="mt-1">${btns}</div></div>`;
+        });
+        modalBody.innerHTML = html || "暂无留言";
+        restoreScrollPosition();
+      }
+
+      window.viewReplies = async (postId) => {
+        dismissedDots.add(postId);
+        loadQuestions();
+        currentPostId = postId;
+        await loadRepliesToModal(postId);
+        const modal = getReplyModal();
+        modal.show();
+        setTimeout(() => restoreScrollPosition(), 100);
       };
 
-      window.approveReply = async (postId, replyId) => {
-        await api(`/api/user/questions/${postId}/replies/${replyId}/approve`, {
-          method: "PUT",
+      async function refreshRepliesAfterAction() {
+        if (!currentPostId) return;
+        saveScrollPosition();
+        await loadRepliesToModal(currentPostId);
+        restoreScrollPosition();
+      }
+
+      window.approveReply = (postId, replyId) =>
+        withLock(async () => {
+          await api(
+            `/api/user/questions/${postId}/replies/${replyId}/approve`,
+            { method: "PUT" },
+          );
+          await refreshRepliesAfterAction();
         });
-        viewReplies(postId);
-      };
-      window.deleteReply = async (postId, replyId) => {
-        if (await ModalAlert.confirm("确认删除", "确定要删除该回复吗？")) {
+
+      window.deleteReply = (postId, replyId) =>
+        withLock(async () => {
+          const confirmed = await ModalAlert.confirm(
+            "确认删除",
+            "确定要删除该回复吗？",
+          );
+          if (!confirmed) return;
           await api(`/api/user/questions/${postId}/replies/${replyId}`, {
             method: "DELETE",
           });
-          viewReplies(postId);
-        }
-      };
-      window.setBest = async (postId, replyId) => {
-        if (
-          await ModalAlert.confirm(
+          await refreshRepliesAfterAction();
+        });
+
+      window.setBest = (postId, replyId) =>
+        withLock(async () => {
+          const confirmed = await ModalAlert.confirm(
             "设为最佳",
-            "设为最佳答案后悬赏积分将转给回答者，确定吗？",
-          )
-        ) {
+            "设为最佳答案后不可更改，确定吗？",
+          );
+          if (!confirmed) return;
           const res = await api(
             `/api/posts/${postId}/replies/${replyId}/best`,
             { method: "PUT" },
           );
-          if (res.code === 200) ModalAlert.success("已设为最佳");
-          viewReplies(postId);
-        }
-      };
+          if (res.code === 200) {
+            ModalAlert.success("已设为最佳答案");
+            await refreshRepliesAfterAction();
+          } else {
+            ModalAlert.error(res.msg || "操作失败");
+          }
+        });
 
+      window.setUnapproved = (postId, replyId) =>
+        withLock(async () => {
+          await api(
+            `/api/user/questions/${postId}/replies/${replyId}/unapprove`,
+            { method: "PUT" },
+          );
+          await refreshRepliesAfterAction();
+        });
+
+      // 我的提问
+      async function loadQuestions() {
+        const res = await api("/api/user/questions");
+        if (res.code !== 200) return;
+        const tbody = document.getElementById("questionTableBody");
+        tbody.innerHTML = res.data.list
+          .map((q) => {
+            const showActions = q.audit_status === 1;
+            const unapprovedCount = q.unapprovedCount || 0;
+            const hasRedDot = unapprovedCount > 0 && !dismissedDots.has(q.id);
+            let actionsHtml = "";
+            if (!showActions)
+              actionsHtml = '<span class="text-muted">审核中...</span>';
+            else
+              actionsHtml = `
+          <button class="btn btn-sm btn-info position-relative" onclick="viewReplies(${q.id})">审核回复 ${hasRedDot ? '<span class="red-dot"></span>' : ""}</button>
+          <a class="btn btn-sm btn-primary" href="/post-detail.html?id=${q.id}" target="_blank">查看</a>`;
+            return `<tr><td>${q.title}</td><td>${q.bounty}</td><td>${new Date(q.created_at).toLocaleString()}</td><td>${actionsHtml}</td></tr>`;
+          })
+          .join("");
+      }
+
+      // 参与回答
       async function loadReplies() {
-        const res = await api("/api/user/replies");
-        if (res.code === 200) {
-          document.getElementById("replyTableBody").innerHTML = res.data
-            .map(
-              (r) => `
-          <tr>
-            <td>${r.content.substring(0, 50)}</td>
-            <td><a href="/post-detail.html?id=${r.post_id}">${r.title}</a></td>
+        const tbody = document.getElementById("replyTableBody");
+        tbody.innerHTML =
+          '<tr><td colspan="4" class="text-center text-muted">加载中...</td></tr>';
+        try {
+          console.log("【参与回答】开始请求 /api/user/replies");
+          const res = await api("/api/user/replies");
+          console.log("【参与回答】响应：", res);
+          if (res.code !== 200) {
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">加载失败：${res.msg || "未知错误"}</td></tr>`;
+            return;
+          }
+          const list = res.data;
+          console.log("【参与回答】列表数组：", list);
+          if (!Array.isArray(list)) {
+            tbody.innerHTML =
+              '<tr><td colspan="4" class="text-center text-danger">数据格式错误</td></tr>';
+            return;
+          }
+          if (list.length === 0) {
+            tbody.innerHTML =
+              '<tr><td colspan="4" class="text-center">暂无回答记录</td></tr>';
+            return;
+          }
+          tbody.innerHTML = list
+            .map((r) => {
+              const contentShort =
+                r.content && r.content.length > 30
+                  ? r.content.substring(0, 30) + "..."
+                  : r.content || "(空)";
+              const titleShort =
+                r.post_title && r.post_title.length > 15
+                  ? r.post_title.substring(0, 15) + "..."
+                  : r.post_title || "(空)";
+              return `<tr>
+            <td><span title="${(r.content || "").replace(/"/g, "&quot;")}">${contentShort}</span></td>
+            <td><span title="${(r.post_title || "").replace(/"/g, "&quot;")}">${titleShort}</span></td>
             <td>${new Date(r.created_at).toLocaleString()}</td>
-          </tr>
-        `,
-            )
+            <td>
+              <a class="btn btn-sm btn-primary" href="/post-detail.html?id=${r.post_id}" target="_blank">前往帖子</a>
+              <button class="btn btn-sm btn-danger" onclick="deleteOwnReply(${r.post_id},${r.id})">删除</button>
+            </td>
+          </tr>`;
+            })
             .join("");
+          console.log("【参与回答】渲染完成");
+        } catch (err) {
+          console.error("【参与回答】异常：", err);
+          tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">异常：${err.message}</td></tr>`;
         }
       }
 
+      window.deleteOwnReply = (postId, replyId) =>
+        withLock(async () => {
+          const confirmed = await ModalAlert.confirm(
+            "确认删除",
+            "确定要删除自己的回答吗？",
+          );
+          if (!confirmed) return;
+          const res = await api(`/api/posts/${postId}/replies/${replyId}`, {
+            method: "DELETE",
+          });
+          if (res.code === 200) {
+            ModalAlert.success("已删除");
+            loadReplies();
+          } else ModalAlert.error(res.msg);
+        });
+
+      // 站内留言
       async function loadMessages() {
         const res = await api("/api/user/messages");
-        if (res.code === 200) {
-          document.getElementById("messageList").innerHTML = res.data
-            .map(
-              (m) => `
-          <li class="list-group-item">
-            <strong>${m.from_admin || "系统"}</strong>: ${m.content}
-            <small class="text-muted float-end">${new Date(m.created_at).toLocaleString()}</small>
-          </li>
-        `,
-            )
-            .join("");
-        }
+        if (res.code !== 200) return;
+        const ul = document.getElementById("messageList");
+        ul.innerHTML = res.data
+          .map(
+            (m) => `<li class="list-group-item">
+        <strong>${m.from_admin || "系统"}</strong>: ${m.content}
+        <small class="text-muted float-end">${new Date(m.created_at).toLocaleString()}</small>
+      </li>`,
+          )
+          .join("");
+      }
+
+      // 个人资料
+      async function loadProfile() {
+        try {
+          const res = await api("/api/user/profile");
+          if (res.code === 200) {
+            document.getElementById("currentNickname").textContent =
+              res.data.nickname || "未知";
+            const user = JSON.parse(localStorage.getItem("user") || "{}");
+            user.nickname = res.data.nickname;
+            localStorage.setItem("user", JSON.stringify(user));
+          }
+        } catch (e) {}
       }
 
       document
         .getElementById("saveNickname")
         .addEventListener("click", async () => {
-          const nickname = document.getElementById("newNickname").value;
+          const nickname = document.getElementById("newNickname").value.trim();
+          if (!nickname) return ModalAlert.error("昵称不能为空");
           const res = await api("/api/user/profile", {
             method: "PUT",
             body: JSON.stringify({ nickname }),
           });
-          ModalAlert.success(res.msg);
+          if (res.code === 200) {
+            ModalAlert.success("昵称已修改");
+            document.getElementById("newNickname").value = "";
+            loadProfile();
+          } else ModalAlert.error(res.msg);
         });
+
       document
         .getElementById("changePwd")
         .addEventListener("click", async () => {
-          const security_answer = document.getElementById("secAnswer").value;
+          const security_answer = document
+            .getElementById("secAnswer")
+            .value.trim();
           const new_password = document.getElementById("newPwd").value;
+          if (!security_answer || !new_password)
+            return ModalAlert.error("请完整填写");
           const res = await api("/api/user/change-password", {
             method: "PUT",
             body: JSON.stringify({ security_answer, new_password }),
           });
-          ModalAlert.success(res.msg);
+          if (res.code === 200) ModalAlert.success("密码已修改");
+          else ModalAlert.error(res.msg);
         });
 
-      // 初始化
+      // 事件委托监听选项卡切换
+      document.querySelector("#userTabs").addEventListener("click", (e) => {
+        const button = e.target.closest('button[data-bs-toggle="tab"]');
+        if (!button) return;
+        const targetId = button.getAttribute("data-bs-target");
+        if (!targetId) return;
+        if (targetId === "#myReplies") {
+          console.log("【选项卡】切换到参与回答");
+          loadReplies();
+        } else if (targetId === "#messages") {
+          loadMessages();
+        } else if (targetId === "#profile") {
+          loadProfile();
+        }
+      });
+
+      // 初始加载提问列表
       loadQuestions();
-      document
-        .getElementById("myReplies")
-        .addEventListener("show.bs.tab", loadReplies);
-      document
-        .getElementById("messages")
-        .addEventListener("show.bs.tab", loadMessages);
     </script>
   </body>
 </html>

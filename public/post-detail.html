@@ -22,7 +22,6 @@
       <hr />
       <h4>回复列表</h4>
       <div id="repliesContainer"></div>
-      <!-- 登录后可见回复框 -->
       <div id="replyBox" style="display: none" class="mt-4">
         <textarea
           id="replyContent"
@@ -33,52 +32,122 @@
         <button class="btn btn-primary mt-2" id="submitReply">提交回复</button>
       </div>
     </div>
+
     <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/modal-alert.js"></script>
     <script src="/js/common.js"></script>
     <script>
+      function unescapeHtml(text) {
+        if (!text) return "";
+        return text
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+          .replace(/&#039;/g, "'");
+      }
+
       const urlParams = new URLSearchParams(window.location.search);
       const postId = urlParams.get("id");
       if (!postId) window.location.href = "/";
+
+      function getCurrentUserId() {
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
+        return user.id || null;
+      }
+
+      async function loadReplies() {
+        const res = await api(`/api/posts/${postId}`);
+        if (res.code !== 200) return;
+        const currentUserId = getCurrentUserId();
+        const replies = res.data.replies;
+        const repliesHtml = replies
+          .map((r) => {
+            const isOwnUnaudited =
+              r.user_id === currentUserId && r.is_approved_by_owner === 0;
+            let statusBadge = "";
+            let deleteBtn = "";
+            if (r.is_best) {
+              statusBadge = '<span class="badge bg-success">最佳答案</span> ';
+            } else if (isOwnUnaudited) {
+              statusBadge =
+                '<span class="badge bg-warning">等待贴主审核</span> ';
+              deleteBtn = `<button class="btn btn-sm btn-outline-danger" onclick="deleteOwnReply(${r.id})">删除</button>`;
+            }
+            return `
+          <div class="card mb-2">
+            <div class="card-body">
+              <strong>${r.nickname}</strong> ${statusBadge}
+              <div>${unescapeHtml(r.content)}</div>
+              <div class="d-flex justify-content-between align-items-center">
+                <small class="text-muted">${new Date(r.created_at).toLocaleString()}</small>
+                ${deleteBtn}
+              </div>
+            </div>
+          </div>`;
+          })
+          .join("");
+        document.getElementById("repliesContainer").innerHTML =
+          repliesHtml || "<p>暂无回复</p>";
+      }
+
+      window.deleteOwnReply = async (replyId) => {
+        const confirmed = await ModalAlert.confirm(
+          "确认删除",
+          "确定要删除自己的回复吗？",
+        );
+        if (!confirmed) return;
+        const res = await api(`/api/posts/${postId}/replies/${replyId}`, {
+          method: "DELETE",
+        });
+        if (res.code === 200) {
+          ModalAlert.success("回复已删除");
+          loadReplies();
+        } else {
+          ModalAlert.error(res.msg || "删除失败");
+        }
+      };
+
       (async function loadPost() {
         const res = await api(`/api/posts/${postId}`);
-        if (res.code !== 200) return alert("帖子不存在");
+        if (res.code !== 200) {
+          ModalAlert.error("帖子不存在");
+          return;
+        }
         const post = res.data.post;
         document.getElementById("postTitle").innerText = post.title;
         document.getElementById("postAuthor").innerText = post.nickname;
         document.getElementById("postCategory").innerText = post.category_name;
         document.getElementById("postBounty").innerText = post.bounty;
-        document.getElementById("postContent").innerHTML = post.content;
-        // 回复列表
-        const repliesHtml = res.data.replies
-          .map(
-            (r) => `
-        <div class="card mb-2">
-          <div class="card-body">
-            <strong>${r.nickname}</strong> ${r.is_best ? '<span class="badge bg-success">最佳答案</span>' : ""}
-            <p>${r.content}</p>
-            <small class="text-muted">${new Date(r.created_at).toLocaleString()}</small>
-          </div>
-        </div>
-      `,
-          )
-          .join("");
-        document.getElementById("repliesContainer").innerHTML =
-          repliesHtml || "<p>暂无回复</p>";
-        // 登录用户显示回复框
+        document.getElementById("postContent").innerHTML = unescapeHtml(
+          post.content,
+        );
+
+        await loadReplies();
+
         if (getToken()) {
           document.getElementById("replyBox").style.display = "block";
           document
             .getElementById("submitReply")
             .addEventListener("click", async () => {
-              const content = document.getElementById("replyContent").value;
+              const content = document
+                .getElementById("replyContent")
+                .value.trim();
+              if (!content) {
+                ModalAlert.error("回复内容不能为空");
+                return;
+              }
               const res = await api(`/api/posts/${postId}/reply`, {
                 method: "POST",
                 body: JSON.stringify({ content }),
               });
               if (res.code === 200) {
-                alert("回复成功，等待贴主审核");
-                location.reload();
-              } else alert(res.msg);
+                ModalAlert.success("回复成功，等待贴主审核");
+                document.getElementById("replyContent").value = "";
+                await loadReplies();
+              } else {
+                ModalAlert.error(res.msg);
+              }
             });
         }
       })();

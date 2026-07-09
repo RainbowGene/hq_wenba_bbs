@@ -456,6 +456,24 @@ router.get("/replies", async (req, res) => {
   }
 });
 
+// 批量/单项删除回复（软删）
+router.delete("/replies/delete", async (req, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.json({ code: 400, msg: "参数错误" });
+  }
+  try {
+    await pool.query(
+      "UPDATE replies SET is_deleted=1, deleted_at=NOW(), deleted_by=? WHERE id IN (?)",
+      [req.user.id, ids],
+    );
+    res.json({ code: 200, msg: "已删除" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ code: 500, msg: "服务器错误" });
+  }
+});
+
 router.delete("/replies/delete", async (req, res) => {
   const { ids } = req.body;
   if (!ids || !Array.isArray(ids) || ids.length === 0)
@@ -474,8 +492,9 @@ router.delete("/replies/delete", async (req, res) => {
 
 router.put("/replies/block", async (req, res) => {
   const { ids } = req.body;
-  if (!ids || !Array.isArray(ids) || ids.length === 0)
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
     return res.json({ code: 400, msg: "参数错误" });
+  }
   try {
     await pool.query(
       "UPDATE replies SET is_blocked = CASE WHEN is_blocked = 1 THEN 0 ELSE 1 END WHERE id IN (?)",

@@ -4,10 +4,31 @@
     <meta charset="UTF-8" />
     <title>问吧 - 集团内网论坛</title>
     <link rel="stylesheet" href="/css/bootstrap.min.css" />
-    <script src="/js/bootstrap.bundle.min.js"></script>
-    <script src="/js/modal-alert.js"></script>
-    <script src="/js/common.js"></script>
   </head>
+  <style>
+    .personal-center-btn {
+      position: relative;
+    }
+    .badge-dot {
+      position: absolute;
+      top: -4px;
+      right: -6px;
+      width: 10px;
+      height: 10px;
+      background: red;
+      border-radius: 50%;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0;
+      }
+    }
+  </style>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
       <div class="container">
@@ -33,7 +54,7 @@
             </li>
           </ul>
           <div class="d-flex" id="auth-buttons">
-            <!-- 动态 -->
+            <!-- 动态渲染 -->
           </div>
         </div>
       </div>
@@ -70,76 +91,82 @@
         </button>
       </div>
 
-      <!-- 固定板块 Tab -->
-      <ul class="nav nav-tabs" id="boardTab" role="tablist">
-        <li class="nav-item" role="presentation">
-          <button
-            class="nav-link active"
-            id="announcement-tab"
-            data-bs-toggle="tab"
-            data-bs-target="#announcement"
-            type="button"
-            role="tab"
-          >
-            公告区
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button
-            class="nav-link"
-            id="unsolved-tab"
-            data-bs-toggle="tab"
-            data-bs-target="#unsolved"
-            type="button"
-            role="tab"
-          >
-            待解决问题
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button
-            class="nav-link"
-            id="recommended-tab"
-            data-bs-toggle="tab"
-            data-bs-target="#recommended"
-            type="button"
-            role="tab"
-          >
-            推荐帖子
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button
-            class="nav-link"
-            id="latestReply-tab"
-            data-bs-toggle="tab"
-            data-bs-target="#latestReply"
-            type="button"
-            role="tab"
-          >
-            最新回复
-          </button>
-        </li>
-      </ul>
-      <div class="tab-content mt-2">
-        <div
-          class="tab-pane fade show active"
-          id="announcement"
-          role="tabpanel"
-        >
-          <div class="list-group" id="announcementList"></div>
+      <div class="row">
+        <!-- 左侧主要内容：Tab（待解决问题 + 最新回复） -->
+        <div class="col-md-8">
+          <ul class="nav nav-tabs" id="boardTab" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button
+                class="nav-link active"
+                id="unsolved-tab"
+                data-bs-toggle="tab"
+                data-bs-target="#unsolved"
+                type="button"
+                role="tab"
+              >
+                待解决问题
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button
+                class="nav-link"
+                id="latestReply-tab"
+                data-bs-toggle="tab"
+                data-bs-target="#latestReply"
+                type="button"
+                role="tab"
+              >
+                最新回复
+              </button>
+            </li>
+          </ul>
+          <div class="tab-content mt-2">
+            <div
+              class="tab-pane fade show active"
+              id="unsolved"
+              role="tabpanel"
+            >
+              <div class="list-group" id="unsolvedList"></div>
+            </div>
+            <div class="tab-pane fade" id="latestReply" role="tabpanel">
+              <div class="list-group" id="latestReplyList"></div>
+            </div>
+          </div>
         </div>
-        <div class="tab-pane fade" id="unsolved" role="tabpanel">
-          <div class="list-group" id="unsolvedList"></div>
-        </div>
-        <div class="tab-pane fade" id="recommended" role="tabpanel">
-          <div class="list-group" id="recommendedList"></div>
-        </div>
-        <div class="tab-pane fade" id="latestReply" role="tabpanel">
-          <div class="list-group" id="latestReplyList"></div>
+
+        <!-- 右侧卡片：公告区 + 推荐帖子 -->
+        <div class="col-md-4">
+          <!-- 公告区卡片 -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h5 class="mb-0">📢 公告区</h5>
+            </div>
+            <div class="card-body p-2">
+              <div
+                class="list-group list-group-flush"
+                id="announcementList"
+              ></div>
+            </div>
+          </div>
+          <!-- 推荐帖子卡片 -->
+          <div class="card">
+            <div class="card-header bg-success text-white">
+              <h5 class="mb-0">⭐ 推荐帖子</h5>
+            </div>
+            <div class="card-body p-2">
+              <div
+                class="list-group list-group-flush"
+                id="recommendedList"
+              ></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/modal-alert.js"></script>
+    <script src="/js/common.js"></script>
     <script>
       // ========== 登录状态 ==========
       const token = getToken();
@@ -151,10 +178,12 @@
             '<a href="/admin/index.html" class="btn btn-outline-warning me-2">后台管理</a>';
         }
         document.getElementById("auth-buttons").innerHTML = `
-      <span class="text-white me-2 mt-2">${user.nickname || user.username}，积分：<span id="userPoints">${user.points}</span></span>
-      ${adminLink}
-      <a href="/user-center.html" class="btn btn-outline-light me-2">个人中心</a>
-      <button class="btn btn-light" onclick="logout()">退出</button>`;
+    <span class="text-white me-2 mt-2">${user.nickname || user.username}，积分：<span id="userPoints">${user.points}</span></span>
+    ${adminLink}
+    <a href="/user-center.html" class="btn btn-outline-light me-2 personal-center-btn" id="personalCenterBtn">个人中心
+      <span id="notificationDot" class="badge-dot" style="display:none;"></span>
+      </a>
+    <button class="btn btn-light" onclick="logout()">退出</button>`;
       } else {
         document.getElementById("auth-buttons").innerHTML =
           '<a href="/login.html" class="btn btn-outline-light me-2">登录</a><a href="/register.html" class="btn btn-light">注册</a>';
@@ -183,9 +212,7 @@
         document.getElementById("category-bar").innerHTML = html;
       }
       window.filterCategory = function (categoryId) {
-        // 跳转到按分类查看的页面或弹窗展示，此处简单跳转到首页并带参数，由首页轮询结果区处理（可进一步扩展）
         alert(`筛选分类ID: ${categoryId}，可在实际项目中实现跳转或异步加载`);
-        // 实际可用 window.location.href=`/posts-by-category.html?cat=${categoryId}` 并单独建页，此处省略
       };
 
       // ========== 轮播图 ==========
@@ -215,6 +242,7 @@
       }
 
       // ========== 板块数据加载 ==========
+      // 公告区
       async function loadAnnouncements() {
         const res = await api("/api/public/announcements");
         if (res.code !== 200) return;
@@ -231,9 +259,11 @@
     </a>
   `,
             )
-            .join("") || '<p class="text-muted">暂无公告</p>';
+            .join("") ||
+          '<div class="list-group-item text-muted">暂无公告</div>';
       }
 
+      // 待解决问题
       async function loadUnsolved() {
         const res = await api("/api/public/unsolved");
         if (res.code !== 200) return;
@@ -250,9 +280,11 @@
     </a>
   `,
             )
-            .join("") || '<p class="text-muted">暂无待解决问题</p>';
+            .join("") ||
+          '<div class="list-group-item text-muted">暂无待解决问题</div>';
       }
 
+      // 推荐帖子
       async function loadRecommended() {
         const res = await api("/api/public/recommended");
         if (res.code !== 200) return;
@@ -268,9 +300,11 @@
     </a>
   `,
             )
-            .join("") || '<p class="text-muted">暂无推荐帖子</p>';
+            .join("") ||
+          '<div class="list-group-item text-muted">暂无推荐帖子</div>';
       }
 
+      // 最新回复
       async function loadLatestReply() {
         const res = await api("/api/public/latest-reply");
         if (res.code !== 200) return;
@@ -286,8 +320,19 @@
     </a>
   `,
             )
-            .join("") || '<p class="text-muted">暂无回复</p>';
+            .join("") ||
+          '<div class="list-group-item text-muted">暂无回复</div>';
       }
+
+      // 获取未审核回复数量
+      async function checkNotifications() {
+        if (!token) return;
+        const res = await api("/api/user/notification-count");
+        if (res.code === 200 && res.data.count > 0) {
+          document.getElementById("notificationDot").style.display = "";
+        }
+      }
+      checkNotifications();
 
       // 初始化所有
       loadCategories();
