@@ -130,6 +130,16 @@ router.get("/:id", async (req, res) => {
 // 发布回复
 router.post("/:id/reply", verifyToken, async (req, res) => {
   const postId = req.params.id;
+
+  // 检查当前用户是否被提问者拉黑
+  const [blockRows] = await pool.query(
+    "SELECT id FROM user_blocks WHERE blocker_id = (SELECT user_id FROM posts WHERE id = ?) AND blocked_id = ?",
+    [postId, req.user.id],
+  );
+  if (blockRows.length > 0) {
+    return res.json({ code: 403, msg: "你已被该用户拉黑，无法回复" });
+  }
+
   let { content } = req.body;
   if (!content) return res.json({ code: 400, msg: "内容不能为空" });
   content = filterSensitiveWords(escapeHtml(content), config.sensitiveWords);

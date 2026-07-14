@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>用户详情 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+      <div class="container"><a class="navbar-brand" href="/">问吧</a></div>
+    </nav>
+    <div class="container mt-3">
+      <div id="profileCard" class="mb-4">
+        <h3 id="nickname"></h3>
+        <p>
+          积分：<span id="points"></span> | 注册时间：<span id="joined"></span>
+        </p>
+        <div>
+          <button id="followBtn" class="btn btn-sm btn-outline-primary">
+            关注
+          </button>
+          <button id="blockBtn" class="btn btn-sm btn-outline-danger ms-2">
+            拉黑
+          </button>
+        </div>
+      </div>
+      <h5>最近提问</h5>
+      <div class="list-group" id="recentPosts"></div>
+    </div>
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/modal-alert.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      const urlParams = new URLSearchParams(window.location.search);
+      const userId = urlParams.get("id");
+      if (!userId) window.location.href = "/";
+
+      let isFollowing = false,
+        isBlocked = false;
+
+      function updateButtons() {
+        document.getElementById("followBtn").textContent = isFollowing
+          ? "取消关注"
+          : "关注";
+        document.getElementById("blockBtn").textContent = isBlocked
+          ? "取消拉黑"
+          : "拉黑";
+      }
+
+      async function loadProfile() {
+        const res = await api(`/api/user/profile/${userId}`);
+        if (res.code !== 200) {
+          ModalAlert.error("用户不存在");
+          return;
+        }
+        const user = res.data;
+        document.getElementById("nickname").textContent = user.nickname;
+        document.getElementById("points").textContent = user.points;
+        document.getElementById("joined").textContent = new Date(
+          user.created_at,
+        ).toLocaleDateString();
+
+        // 加载最近提问
+        const postsRes = await api(`/api/user/questions/${userId}`);
+        const postList = document.getElementById("recentPosts");
+        if (postsRes.code === 200 && postsRes.data.length > 0) {
+          postList.innerHTML = postsRes.data
+            .map(
+              (p) => `
+          <a href="/post-detail.html?id=${p.id}" class="list-group-item list-group-item-action">
+            ${p.title} <span class="badge bg-warning float-end">${p.bounty}积分</span>
+          </a>`,
+            )
+            .join("");
+        } else {
+          postList.innerHTML = '<div class="text-muted">暂无提问</div>';
+        }
+
+        // 获取关注/拉黑状态（需登录）
+        if (!getToken()) return;
+        const [favRes, blockRes] = await Promise.all([
+          api(`/api/user/follow-status/${userId}`),
+          api(`/api/user/block-status/${userId}`),
+        ]);
+        if (favRes.code === 200) {
+          isFollowing = favRes.data.isFollowing;
+          updateButtons();
+        }
+        if (blockRes.code === 200) {
+          isBlocked = blockRes.data.isBlocked;
+          updateButtons();
+        }
+      }
+
+      document
+        .getElementById("followBtn")
+        .addEventListener("click", async () => {
+          const res = await api(`/api/user/follow/${userId}`, {
+            method: "POST",
+          });
+          if (res.code === 200) {
+            isFollowing = res.data.isFollowing;
+            updateButtons();
+            ModalAlert.success(res.msg);
+          } else ModalAlert.error(res.msg);
+        });
+
+      document
+        .getElementById("blockBtn")
+        .addEventListener("click", async () => {
+          const res = await api(`/api/user/block/${userId}`, {
+            method: "POST",
+          });
+          if (res.code === 200) {
+            isBlocked = res.data.isBlocked;
+            updateButtons();
+            ModalAlert.success(res.msg);
+          } else ModalAlert.error(res.msg);
+        });
+
+      loadProfile();
+    </script>
+  </body>
+</html>

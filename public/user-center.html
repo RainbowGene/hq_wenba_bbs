@@ -106,6 +106,16 @@
             收藏提问
           </button>
         </li>
+        <!-- 我的关注 -->
+        <li class="nav-item">
+          <button
+            class="nav-link"
+            data-bs-toggle="tab"
+            data-bs-target="#myFollowing"
+          >
+            我的关注
+          </button>
+        </li>
         <li class="nav-item">
           <button
             class="nav-link"
@@ -196,6 +206,20 @@
               </tr>
             </thead>
             <tbody id="favoritesTableBody"></tbody>
+          </table>
+        </div>
+        <!-- 我的关注 -->
+        <div class="tab-pane fade" id="myFollowing">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>昵称</th>
+                <th>积分</th>
+                <th>关注时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="followingTableBody"></tbody>
           </table>
         </div>
         <!-- 个人资料 -->
@@ -687,6 +711,44 @@
         } else ModalAlert.error(res.msg);
       };
 
+      // 我的关注
+      async function loadFollowing() {
+        const tbody = document.getElementById("followingTableBody");
+        tbody.innerHTML =
+          '<tr><td colspan="4" class="text-center text-muted">加载中...</td></tr>';
+        const res = await api("/api/user/following");
+        if (res.code !== 200) {
+          tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">加载失败</td></tr>`;
+          return;
+        }
+        const list = res.data;
+        if (!list.length) {
+          tbody.innerHTML =
+            '<tr><td colspan="4" class="text-center">暂无关注</td></tr>';
+          return;
+        }
+        tbody.innerHTML = list
+          .map(
+            (u) => `
+    <tr>
+      <td><a href="/user-profile.html?id=${u.id}" target="_blank">${u.nickname}</a></td>
+      <td>${u.points}</td>
+      <td>${new Date(u.followed_at).toLocaleString()}</td>
+      <td><button class="btn btn-sm btn-outline-danger" onclick="unfollowUser(${u.id})">取消关注</button></td>
+    </tr>
+  `,
+          )
+          .join("");
+      }
+
+      window.unfollowUser = async (userId) => {
+        const res = await api(`/api/user/follow/${userId}`, { method: "POST" });
+        if (res.code === 200) {
+          ModalAlert.success("已取消关注");
+          loadFollowing();
+        } else ModalAlert.error(res.msg);
+      };
+
       // 补充选项卡切换事件，增加 myFavorites
       document.querySelector("#userTabs").addEventListener("click", (e) => {
         const btn = e.target.closest('button[data-bs-toggle="tab"]');
@@ -696,17 +758,19 @@
         else if (target === "#messages") loadMessages();
         else if (target === "#myFavorites") loadFavorites();
         else if (target === "#profile") loadProfile();
+        else if (target === "#myFollowing") loadFollowing();
       });
 
       // 选项卡切换事件委托
-      document.querySelector("#userTabs").addEventListener("click", (e) => {
-        const btn = e.target.closest('button[data-bs-toggle="tab"]');
-        if (!btn) return;
-        const target = btn.getAttribute("data-bs-target");
-        if (target === "#myReplies") loadReplies(1);
-        else if (target === "#messages") loadMessages();
-        else if (target === "#profile") loadProfile();
-      });
+      // document.querySelector("#userTabs").addEventListener("click", (e) => {
+      //   const btn = e.target.closest('button[data-bs-toggle="tab"]');
+      //   if (!btn) return;
+      //   const target = btn.getAttribute("data-bs-target");
+      //   if (target === "#myReplies") loadReplies(1);
+      //   else if (target === "#messages") loadMessages();
+      //   else if (target === "#profile") loadProfile();
+      //   else if (target === '#myFollowing') loadFollowing();
+      // });
 
       // 初始化：加载待解决与已解决，确保两个按钮红点同时生效
       loadQuestions("unsolved", 1);

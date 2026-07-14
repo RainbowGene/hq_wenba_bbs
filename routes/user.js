@@ -319,4 +319,137 @@ router.get("/favorites", verifyToken, async (req, res) => {
   }
 });
 
+// 获取用户公开详情（不含敏感信息）
+router.get("/profile/:userId", async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, nickname, points, created_at FROM users WHERE id = ?",
+      [req.params.userId],
+    );
+    if (!rows.length) return res.json({ code: 404, msg: "用户不存在" });
+    res.json({ code: 200, data: rows[0] });
+  } catch (err) {
+    res.status(500).json({ code: 500, msg: "服务器错误" });
+  }
+});
+
+// 获取某用户的最近提问（公开）
+router.get("/questions/:userId", async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT p.id, p.title, p.bounty, p.created_at
+       FROM posts p
+       WHERE p.user_id = ? AND p.is_deleted = 0 AND p.audit_status = 1
+       ORDER BY p.created_at DESC
+       LIMIT 10`,
+      [req.params.userId],
+    );
+    res.json({ code: 200, data: rows });
+  } catch (err) {
+    res.status(500).json({ code: 500, msg: "服务器错误" });
+  }
+});
+
+// 关注/取消关注切换
+router.post("/follow/:userId", verifyToken, async (req, res) => {
+  const followeeId = req.params.userId;
+  const followerId = req.user.id;
+  if (followerId == followeeId)
+    return res.json({ code: 400, msg: "不能关注自己" });
+  const conn = await pool.getConnection();
+  try {
+    const [existing] = await conn.query(
+      "SELECT id FROM user_follows WHERE follower_id=? AND followee_id=?",
+      [followerId, followeeId],
+    );
+    if (existing.length > 0) {
+      await conn.query(
+        "DELETE FROM user_follows WHERE follower_id=? AND followee_id=?",
+        [followerId, followeeId],
+      );
+      res.json({ code: 200, msg: "已取消关注", data: { isFollowing: false } });
+    } else {
+      await conn.query(
+        "INSERT INTO user_follows (follower_id, followee_id) VALUES (?,?)",
+        [followerId, followeeId],
+      );
+      res.json({ code: 200, msg: "关注成功", data: { isFollowing: true } });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ code: 500, msg: "服务器错误" });
+  } finally {
+    conn.release();
+  }
+});
+
+// 获取当前用户与目标用户的关注状态
+router.get("/follow-status/:userId", verifyToken, async (req, res) => {
+  const [rows] = await pool.query(
+    "SELECT id FROM user_follows WHERE follower_id=? AND followee_id=?",
+    [req.user.id, req.params.userId],
+  );
+  res.json({ code: 200, data: { isFollowing: rows.length > 0 } });
+});
+
+// 拉黑/取消拉黑切换
+router.post("/block/:userId", verifyToken, async (req, res) => {
+  const blockedId = req.params.userId;
+  const blockerId = req.user.id;
+  if (blockerId == blockedId)
+    return res.json({ code: 400, msg: "不能拉黑自己" });
+  const conn = await pool.getConnection();
+  try {
+    const [existing] = await conn.query(
+      "SELECT id FROM user_blocks WHERE blocker_id=? AND blocked_id=?",
+      [blockerId, blockedId],
+    );
+    if (existing.length > 0) {
+      await conn.query(
+        "DELETE FROM user_blocks WHERE blocker_id=? AND blocked_id=?",
+        [blockerId, blockedId],
+      );
+      res.json({ code: 200, msg: "已取消拉黑", data: { isBlocked: false } });
+    } else {
+      await conn.query(
+        "INSERT INTO user_blocks (blocker_id, blocked_id) VALUES (?,?)",
+        [blockerId, blockedId],
+      );
+      res.json({ code: 200, msg: "已拉黑", data: { isBlocked: true } });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ code: 500, msg: "服务器错误" });
+  } finally {
+    conn.release();
+  }
+});
+
+// 获取当前用户与目标用户的拉黑状态
+router.get("/block-status/:userId", verifyToken, async (req, res) => {
+  const [rows] = await pool.query(
+    "SELECT id FROM user_blocks WHERE blocker_id=? AND blocked_id=?",
+    [req.user.id, req.params.userId],
+  );
+  res.json({ code: 200, data: { isBlocked: rows.length > 0 } });
+});
+
+// 我的关注列表
+router.get("/following", verifyToken, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT u.id, u.nickname, u.points, u.created_at, f.created_at as followed_at
+       FROM user_follows f
+       JOIN users u ON f.followee_id = u.id
+       WHERE f.follower_id = ?
+       ORDER BY f.created_at DESC`,
+      [req.user.id],
+    );
+    res.json({ code: 200, data: rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ code: 500, msg: "服务器错误" });
+  }
+});
+
 module.exports = router;

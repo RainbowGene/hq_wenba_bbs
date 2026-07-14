@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <title>帖子详情 - 问吧</title>
     <link rel="stylesheet" href="/css/bootstrap.min.css" />
+    <style>
+      /* 取消全局链接下划线 */
+      a,
+      a:hover,
+      a:visited,
+      a:active {
+        text-decoration: none;
+      }
+      /* 回复内容样式 */
+      .reply-content {
+        font-size: 1.2rem; /* 比默认略大 */
+        margin: 8px 0; /* 上下间距 */
+        line-height: 1.5;
+      }
+    </style>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
@@ -17,12 +32,8 @@
         ></span>
         | 悬赏：<span id="postBounty"></span> 积分
       </p>
-      <button
-        id="favoriteBtn"
-        class="btn btn-outline-warning btn-sm mb-2"
-        style="display: none"
-      >
-        ⭐ 收藏
+      <button id="favoriteBtn" class="btn btn-sm mb-2" style="display: none">
+        收藏
       </button>
       <hr />
       <div id="postContent"></div>
@@ -65,7 +76,6 @@
 
       let isFavorited = false;
 
-      // 更新收藏按钮状态
       function updateFavoriteButton() {
         const btn = document.getElementById("favoriteBtn");
         if (!getToken()) {
@@ -77,7 +87,6 @@
         btn.className = `btn btn-sm mb-2 ${isFavorited ? "btn-warning" : "btn-outline-warning"}`;
       }
 
-      // 切换收藏
       async function toggleFavorite() {
         if (!postId) return;
         const res = await api(`/api/posts/${postId}/favorite`, {
@@ -101,16 +110,28 @@
           .map((r) => {
             const isOwnUnaudited =
               r.user_id === currentUserId && r.is_approved_by_owner === 0;
-            let statusBadge = "",
-              deleteBtn = "";
-            if (r.is_best)
+            let statusBadge = "";
+            let deleteBtn = "";
+            if (r.is_best) {
               statusBadge = '<span class="badge bg-success">最佳答案</span> ';
-            else if (isOwnUnaudited) {
+            } else if (isOwnUnaudited) {
               statusBadge =
                 '<span class="badge bg-warning">等待贴主审核</span> ';
               deleteBtn = `<button class="btn btn-sm btn-outline-danger" onclick="deleteOwnReply(${r.id})">删除</button>`;
             }
-            return `<div class="card mb-2"><div class="card-body"><strong>${r.nickname}</strong> ${statusBadge}<div>${unescapeHtml(r.content)}</div><div class="d-flex justify-content-between align-items-center"><small class="text-muted">${new Date(r.created_at).toLocaleString()}</small>${deleteBtn}</div></div></div>`;
+            return `<div class="card mb-2">
+          <div class="card-body">
+            <div class="d-flex align-items-center">
+              <strong><a href="/user-profile.html?id=${r.user_id}" target="_blank">${r.nickname}</a></strong>
+              <span class="ms-2">${statusBadge}</span>
+            </div>
+            <div class="reply-content">${unescapeHtml(r.content)}</div>
+            <div class="d-flex justify-content-between align-items-center">
+              <small class="text-muted">${new Date(r.created_at).toLocaleString()}</small>
+              ${deleteBtn}
+            </div>
+          </div>
+        </div>`;
           })
           .join("");
         document.getElementById("repliesContainer").innerHTML =
@@ -140,14 +161,14 @@
         }
         const post = res.data.post;
         document.getElementById("postTitle").innerText = post.title;
-        document.getElementById("postAuthor").innerText = post.nickname;
+        document.getElementById("postAuthor").innerHTML =
+          `<a href="/user-profile.html?id=${post.user_id}" target="_blank">${post.nickname}</a>`;
         document.getElementById("postCategory").innerText = post.category_name;
         document.getElementById("postBounty").innerText = post.bounty;
         document.getElementById("postContent").innerHTML = unescapeHtml(
           post.content,
         );
 
-        // 获取收藏状态
         if (getToken()) {
           const favRes = await api(`/api/posts/${postId}/favorite-status`);
           if (favRes.code === 200) {
