@@ -12,13 +12,25 @@ async function api(url, options = {}) {
     headers["Authorization"] = `Bearer ${getToken()}`;
   }
   const res = await fetch(url, { ...options, headers });
-  const data = await res.json();
-  if (data.code === 401) {
-    localStorage.clear();
-    window.location.href = "/login.html";
-    return;
+  // 检查响应状态码
+  if (!res.ok) {
+    // 如果响应不是 JSON，可能是登录跳转等
+    if (res.status === 401) {
+      localStorage.clear();
+      window.location.href = "/login.html";
+      throw new Error("未登录");
+    }
+    const text = await res.text();
+    throw new Error(`请求失败 (${res.status}): ${text}`);
   }
-  return data;
+  // 尝试解析 JSON，若失败则返回原始文本
+  const contentType = res.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
+    return await res.json();
+  } else {
+    const text = await res.text();
+    throw new Error(`服务器返回了非 JSON 数据: ${text.substring(0, 100)}`);
+  }
 }
 
 // 退出登录（防御性调用 ModalAlert）

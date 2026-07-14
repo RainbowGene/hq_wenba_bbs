@@ -28,7 +28,7 @@ router.post("/", verifyToken, async (req, res) => {
         [req.user.id],
       );
       if (userRows[0].points < bountyNum)
-        return res.json({ code: 400, msg: "积分不足" });
+        return res.json({ code: 400, msg: "您有正在悬赏的提问，当前积分不足" });
     }
 
     const words = config.sensitiveWords;
@@ -243,13 +243,15 @@ router.delete("/:postId/replies/:replyId", verifyToken, async (req, res) => {
   }
 });
 
-// 设为最佳答案（不可逆，同时审核通过）
+// 设为最佳答案（不可逆，同时审核通过，发放积分并通知）
 router.put("/:postId/replies/:replyId/best", verifyToken, async (req, res) => {
   const postId = req.params.postId;
   const replyId = req.params.replyId;
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+
+    // 校验帖子所有权
     const [posts] = await conn.query(
       "SELECT * FROM posts WHERE id=? AND user_id=? AND is_deleted=0",
       [postId, req.user.id],
@@ -263,6 +265,8 @@ router.put("/:postId/replies/:replyId/best", verifyToken, async (req, res) => {
       await conn.rollback();
       return res.json({ code: 400, msg: "该问题已有最佳答案" });
     }
+
+    // 校验回复存在
     const [replies] = await conn.query(
       "SELECT * FROM replies WHERE id=? AND post_id=? AND is_deleted=0",
       [replyId, postId],
@@ -272,18 +276,21 @@ router.put("/:postId/replies/:replyId/best", verifyToken, async (req, res) => {
       return res.json({ code: 400, msg: "回复不存在" });
     }
     const reply = replies[0];
-    // 新增：不能自己推荐自己
+
+    // 不能自问自答
     if (reply.user_id === req.user.id) {
       await conn.rollback();
       return res.json({ code: 400, msg: "不能将自己的回答设为最佳" });
     }
 
+    // 更新回复为最佳并审核通过，帖子标记为已解决
     await conn.query(
       "UPDATE replies SET is_best=1, is_approved_by_owner=1 WHERE id=?",
       [replyId],
     );
     await conn.query("UPDATE posts SET is_resolved=1 WHERE id=?", [postId]);
 
+    // 积分发放给回答者（积分在发布时已扣除，无需再扣贴主）
     if (post.bounty > 0) {
       await conn.query("UPDATE users SET points = points + ? WHERE id = ?", [
         post.bounty,
@@ -300,14 +307,75 @@ router.put("/:postId/replies/:replyId/best", verifyToken, async (req, res) => {
       );
     }
 
+    // 发送系统通知给回答者
+    const messageContent = `您在《${post.title}》提问中的回答已被采纳，获得积分 ${post.bounty}。`;
+    await conn.query(
+      "INSERT INTO user_messages (user_id, from_admin_id, content) VALUES (?, ?, ?)",
+      [reply.user_id, null, messageContent],
+    );
+
+    // 可选：通知贴主（注释掉）
+    const msgToOwner = `您在《${post.title}》中设置的最佳答案已生效。`;
+    await conn.query(
+      "INSERT INTO user_messages (user_id, from_admin_id, content) VALUES (?, ?, ?)",
+      [post.user_id, null, msgToOwner],
+    );
+
     await conn.commit();
-    res.json({ code: 200, msg: "已设为最佳答案" });
+    res.json({ code: 200, msg: "已设为最佳答案并通知对方" });
   } catch (err) {
     await conn.rollback();
     console.error(err);
     res.status(500).json({ code: 500, msg: "服务器错误" });
   } finally {
     conn.release();
+  }
+});
+
+// 收藏/取消收藏切换
+router.post("/:id/favorite", verifyToken, async (req, res) => {
+  const postId = req.params.id;
+  const userId = req.user.id;
+  const conn = await pool.getConnection();
+  try {
+    const [existing] = await conn.query(
+      "SELECT id FROM favorites WHERE user_id=? AND post_id=?",
+      [userId, postId],
+    );
+    if (existing.length > 0) {
+      await conn.query("DELETE FROM favorites WHERE user_id=? AND post_id=?", [
+        userId,
+        postId,
+      ]);
+      res.json({ code: 200, msg: "已取消收藏", data: { isFavorited: false } });
+    } else {
+      await conn.query(
+        "INSERT INTO favorites (user_id, post_id) VALUES (?,?)",
+        [userId, postId],
+      );
+      res.json({ code: 200, msg: "收藏成功", data: { isFavorited: true } });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ code: 500, msg: "服务器错误" });
+  } finally {
+    conn.release();
+  }
+});
+
+// 获取当前用户对某个帖子的收藏状态
+router.get("/:id/favorite-status", verifyToken, async (req, res) => {
+  const postId = req.params.id;
+  const userId = req.user.id;
+  try {
+    const [rows] = await pool.query(
+      "SELECT id FROM favorites WHERE user_id=? AND post_id=?",
+      [userId, postId],
+    );
+    res.json({ code: 200, data: { isFavorited: rows.length > 0 } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ code: 500, msg: "服务器错误" });
   }
 });
 

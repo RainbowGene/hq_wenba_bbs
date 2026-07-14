@@ -17,6 +17,13 @@
         ></span>
         | 悬赏：<span id="postBounty"></span> 积分
       </p>
+      <button
+        id="favoriteBtn"
+        class="btn btn-outline-warning btn-sm mb-2"
+        style="display: none"
+      >
+        ⭐ 收藏
+      </button>
       <hr />
       <div id="postContent"></div>
       <hr />
@@ -56,6 +63,35 @@
         return user.id || null;
       }
 
+      let isFavorited = false;
+
+      // 更新收藏按钮状态
+      function updateFavoriteButton() {
+        const btn = document.getElementById("favoriteBtn");
+        if (!getToken()) {
+          btn.style.display = "none";
+          return;
+        }
+        btn.style.display = "inline-block";
+        btn.textContent = isFavorited ? "⭐ 取消收藏" : "☆ 收藏";
+        btn.className = `btn btn-sm mb-2 ${isFavorited ? "btn-warning" : "btn-outline-warning"}`;
+      }
+
+      // 切换收藏
+      async function toggleFavorite() {
+        if (!postId) return;
+        const res = await api(`/api/posts/${postId}/favorite`, {
+          method: "POST",
+        });
+        if (res.code === 200) {
+          isFavorited = res.data.isFavorited;
+          updateFavoriteButton();
+          ModalAlert.success(isFavorited ? "已收藏" : "已取消收藏");
+        } else {
+          ModalAlert.error(res.msg || "操作失败");
+        }
+      }
+
       async function loadReplies() {
         const res = await api(`/api/posts/${postId}`);
         if (res.code !== 200) return;
@@ -65,26 +101,16 @@
           .map((r) => {
             const isOwnUnaudited =
               r.user_id === currentUserId && r.is_approved_by_owner === 0;
-            let statusBadge = "";
-            let deleteBtn = "";
-            if (r.is_best) {
+            let statusBadge = "",
+              deleteBtn = "";
+            if (r.is_best)
               statusBadge = '<span class="badge bg-success">最佳答案</span> ';
-            } else if (isOwnUnaudited) {
+            else if (isOwnUnaudited) {
               statusBadge =
                 '<span class="badge bg-warning">等待贴主审核</span> ';
               deleteBtn = `<button class="btn btn-sm btn-outline-danger" onclick="deleteOwnReply(${r.id})">删除</button>`;
             }
-            return `
-          <div class="card mb-2">
-            <div class="card-body">
-              <strong>${r.nickname}</strong> ${statusBadge}
-              <div>${unescapeHtml(r.content)}</div>
-              <div class="d-flex justify-content-between align-items-center">
-                <small class="text-muted">${new Date(r.created_at).toLocaleString()}</small>
-                ${deleteBtn}
-              </div>
-            </div>
-          </div>`;
+            return `<div class="card mb-2"><div class="card-body"><strong>${r.nickname}</strong> ${statusBadge}<div>${unescapeHtml(r.content)}</div><div class="d-flex justify-content-between align-items-center"><small class="text-muted">${new Date(r.created_at).toLocaleString()}</small>${deleteBtn}</div></div></div>`;
           })
           .join("");
         document.getElementById("repliesContainer").innerHTML =
@@ -103,9 +129,7 @@
         if (res.code === 200) {
           ModalAlert.success("回复已删除");
           loadReplies();
-        } else {
-          ModalAlert.error(res.msg || "删除失败");
-        }
+        } else ModalAlert.error(res.msg);
       };
 
       (async function loadPost() {
@@ -122,6 +146,18 @@
         document.getElementById("postContent").innerHTML = unescapeHtml(
           post.content,
         );
+
+        // 获取收藏状态
+        if (getToken()) {
+          const favRes = await api(`/api/posts/${postId}/favorite-status`);
+          if (favRes.code === 200) {
+            isFavorited = favRes.data.isFavorited;
+            updateFavoriteButton();
+          }
+          document
+            .getElementById("favoriteBtn")
+            .addEventListener("click", toggleFavorite);
+        }
 
         await loadReplies();
 
@@ -145,9 +181,7 @@
                 ModalAlert.success("回复成功，等待贴主审核");
                 document.getElementById("replyContent").value = "";
                 await loadReplies();
-              } else {
-                ModalAlert.error(res.msg);
-              }
+              } else ModalAlert.error(res.msg);
             });
         }
       })();

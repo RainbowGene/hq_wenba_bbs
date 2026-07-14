@@ -109,4 +109,57 @@ router.get("/config/upload", async (req, res) => {
     data: { allowUserUpload: config.upload.allowUserUpload },
   });
 });
+
+// 公共搜索（支持关键词和分类，分页）
+router.get("/search", async (req, res) => {
+  const { q, cat, page = 1, size = 10 } = req.query;
+  const offset = (page - 1) * size;
+  let conditions = [
+    "p.audit_status = 1",
+    "p.is_deleted = 0",
+    "p.is_blocked = 0",
+  ];
+  const params = [];
+
+  if (q) {
+    conditions.push("(p.title LIKE ? OR p.content LIKE ?)");
+    params.push(`%${q}%`, `%${q}%`);
+  }
+  if (cat) {
+    const [subCats] = await pool.query(
+      "SELECT id FROM categories WHERE parent_id = ? OR id = ?",
+      [cat, cat],
+    );
+    const catIds = subCats.map((c) => c.id);
+    if (catIds.length > 0) {
+      conditions.push(`p.category_id IN (${catIds.join(",")})`);
+    } else {
+      conditions.push("p.category_id = ?");
+      params.push(cat);
+    }
+  }
+
+  const where = "WHERE " + conditions.join(" AND ");
+  try {
+    const [rows] = await pool.query(
+      `
+      SELECT p.id, p.title, p.content, p.bounty, p.created_at, u.nickname
+      FROM posts p
+      JOIN users u ON p.user_id = u.id
+      ${where}
+      ORDER BY p.created_at DESC
+      LIMIT ?,?`,
+      [...params, offset, +size],
+    );
+    const [[{ total }]] = await pool.query(
+      `SELECT COUNT(*) as total FROM posts p ${where}`,
+      params,
+    );
+    res.json({ code: 200, data: { list: rows, total, page: +page } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ code: 500, msg: "服务器错误" });
+  }
+});
+
 module.exports = router;

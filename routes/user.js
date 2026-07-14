@@ -6,17 +6,31 @@ const bcrypt = require("bcryptjs");
 
 // 我的提问列表（含未审核留言数量）
 router.get("/questions", verifyToken, async (req, res) => {
+  const { page = 1, size = 5, is_resolved } = req.query;
+  const offset = (page - 1) * size;
+  let conditions = ["p.user_id = ?", "p.is_deleted = 0"];
+  const params = [req.user.id];
+  if (is_resolved !== undefined && is_resolved !== "") {
+    conditions.push("p.is_resolved = ?");
+    params.push(is_resolved);
+  }
+  const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
   try {
-    const [posts] = await pool.query(
+    const [rows] = await pool.query(
       `
-      SELECT p.id, p.title, p.bounty, p.created_at, p.audit_status,
+      SELECT p.id, p.title, p.bounty, p.created_at, p.audit_status, p.is_resolved,
       (SELECT COUNT(*) FROM replies r WHERE r.post_id = p.id AND r.is_approved_by_owner = 0 AND r.is_deleted = 0) as unapprovedCount
       FROM posts p
-      WHERE p.user_id = ? AND p.is_deleted = 0
-      ORDER BY p.created_at DESC`,
-      [req.user.id],
+      ${where}
+      ORDER BY p.created_at DESC
+      LIMIT ?,?`,
+      [...params, offset, +size],
     );
-    res.json({ code: 200, data: { list: posts } });
+    const [[{ total }]] = await pool.query(
+      `SELECT COUNT(*) as total FROM posts p ${where}`,
+      params,
+    );
+    res.json({ code: 200, data: { list: rows, total, page: +page } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ code: 500, msg: "服务器错误" });
@@ -170,6 +184,8 @@ router.put("/change-password", verifyToken, async (req, res) => {
 
 // 参与回答列表
 router.get("/replies", verifyToken, async (req, res) => {
+  const { page = 1, size = 10 } = req.query;
+  const offset = (page - 1) * size;
   try {
     const [rows] = await pool.query(
       `
@@ -178,10 +194,18 @@ router.get("/replies", verifyToken, async (req, res) => {
       FROM replies r
       JOIN posts p ON r.post_id = p.id
       WHERE r.user_id = ? AND r.is_deleted = 0
-      ORDER BY r.created_at DESC`,
+      ORDER BY r.created_at DESC
+      LIMIT ?,?`,
+      [req.user.id, offset, +size],
+    );
+    const [[{ total }]] = await pool.query(
+      `
+      SELECT COUNT(*) as total FROM replies r
+      JOIN posts p ON r.post_id = p.id
+      WHERE r.user_id = ? AND r.is_deleted = 0`,
       [req.user.id],
     );
-    res.json({ code: 200, data: rows });
+    res.json({ code: 200, data: { list: rows, total, page: +page } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ code: 500, msg: "服务器错误" });
@@ -235,17 +259,60 @@ router.get("/feedbacks", verifyToken, async (req, res) => {
   }
 });
 
-// 未审核回复数量（红点通知）
+// 通知计数（未审核回复 + 未读消息）
 router.get("/notification-count", verifyToken, async (req, res) => {
+  try {
+    const [[{ unapproved }]] = await pool.query(
+      `
+      SELECT COUNT(*) as unapproved FROM replies r
+      JOIN posts p ON r.post_id = p.id
+      WHERE p.user_id = ? AND r.is_approved_by_owner = 0 AND r.is_deleted = 0
+    `,
+      [req.user.id],
+    );
+    const [[{ unread }]] = await pool.query(
+      `
+      SELECT COUNT(*) as unread FROM user_messages
+      WHERE user_id = ? AND is_read = 0
+    `,
+      [req.user.id],
+    );
+    const count = (unapproved || 0) + (unread || 0);
+    res.json({ code: 200, data: { count, unapproved, unread } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ code: 500, msg: "服务器错误" });
+  }
+});
+
+// 标记消息已读
+router.put("/messages/:id/read", verifyToken, async (req, res) => {
+  try {
+    await pool.query(
+      "UPDATE user_messages SET is_read=1 WHERE id=? AND user_id=?",
+      [req.params.id, req.user.id],
+    );
+    res.json({ code: 200, msg: "已读" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ code: 500, msg: "服务器错误" });
+  }
+});
+
+// 我的收藏列表
+router.get("/favorites", verifyToken, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `
-      SELECT COUNT(*) as count FROM replies r
-      JOIN posts p ON r.post_id = p.id
-      WHERE p.user_id = ? AND r.is_approved_by_owner = 0 AND r.is_deleted = 0`,
+      SELECT f.id, f.created_at as favorited_at, p.id as post_id, p.title, p.bounty, p.created_at, u.nickname
+      FROM favorites f
+      JOIN posts p ON f.post_id = p.id
+      JOIN users u ON p.user_id = u.id
+      WHERE f.user_id = ?
+      ORDER BY f.created_at DESC`,
       [req.user.id],
     );
-    res.json({ code: 200, data: { count: rows[0].count } });
+    res.json({ code: 200, data: rows });
   } catch (err) {
     console.error(err);
     res.status(500).json({ code: 500, msg: "服务器错误" });

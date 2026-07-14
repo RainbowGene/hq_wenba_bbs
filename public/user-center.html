@@ -13,6 +13,20 @@
         border-radius: 50%;
         margin-left: 4px;
       }
+      .tab-red-dot {
+        position: relative;
+      }
+      .tab-red-dot::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        right: -2px;
+        width: 8px;
+        height: 8px;
+        background: red;
+        border-radius: 50%;
+        display: block;
+      }
       .modal-body {
         max-height: 60vh;
         overflow-y: auto;
@@ -23,6 +37,23 @@
         overflow: hidden;
         text-overflow: ellipsis;
         display: inline-block;
+      }
+      .sub-tab-btn {
+        position: relative;
+      }
+      .sub-tab-btn.has-dot::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: -4px;
+        width: 8px;
+        height: 8px;
+        background: red;
+        border-radius: 50%;
+      }
+      .pagination-sm .page-link {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
       }
     </style>
   </head>
@@ -37,61 +68,103 @@
     </nav>
     <div class="container mt-3">
       <ul class="nav nav-tabs" id="userTabs" role="tablist">
-        <li class="nav-item" role="presentation">
+        <li class="nav-item">
           <button
             class="nav-link active"
             data-bs-toggle="tab"
             data-bs-target="#myQuestions"
-            type="button"
+            id="myQuestionsTab"
           >
             我的提问
           </button>
         </li>
-        <li class="nav-item" role="presentation">
+        <li class="nav-item">
           <button
             class="nav-link"
             data-bs-toggle="tab"
             data-bs-target="#myReplies"
-            type="button"
           >
             参与回答
           </button>
         </li>
-        <li class="nav-item" role="presentation">
+        <li class="nav-item">
           <button
             class="nav-link"
             data-bs-toggle="tab"
             data-bs-target="#messages"
-            type="button"
+            id="messagesTab"
           >
             站内留言
           </button>
         </li>
-        <li class="nav-item" role="presentation">
+        <li class="nav-item">
+          <button
+            class="nav-link"
+            data-bs-toggle="tab"
+            data-bs-target="#myFavorites"
+          >
+            收藏提问
+          </button>
+        </li>
+        <li class="nav-item">
           <button
             class="nav-link"
             data-bs-toggle="tab"
             data-bs-target="#profile"
-            type="button"
           >
             个人资料
           </button>
         </li>
       </ul>
       <div class="tab-content mt-3">
+        <!-- 我的提问 -->
         <div class="tab-pane fade show active" id="myQuestions">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>标题</th>
-                <th>悬赏</th>
-                <th>时间</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="questionTableBody"></tbody>
-          </table>
+          <div class="mb-2">
+            <button
+              class="btn btn-sm btn-outline-secondary sub-tab-btn active"
+              id="unsolvedBtn"
+              onclick="switchQuestionTab('unsolved')"
+            >
+              待解决
+            </button>
+            <button
+              class="btn btn-sm btn-outline-secondary sub-tab-btn"
+              id="resolvedBtn"
+              onclick="switchQuestionTab('resolved')"
+            >
+              已解决
+            </button>
+          </div>
+          <div id="unsolvedQuestions" style="display: block">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>标题</th>
+                  <th>悬赏</th>
+                  <th>时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="unsolvedTableBody"></tbody>
+            </table>
+            <div id="unsolvedPagination"></div>
+          </div>
+          <div id="resolvedQuestions" style="display: none">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>标题</th>
+                  <th>悬赏</th>
+                  <th>时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="resolvedTableBody"></tbody>
+            </table>
+            <div id="resolvedPagination"></div>
+          </div>
         </div>
+        <!-- 参与回答 -->
         <div class="tab-pane fade" id="myReplies">
           <table class="table">
             <thead>
@@ -104,10 +177,28 @@
             </thead>
             <tbody id="replyTableBody"></tbody>
           </table>
+          <!-- 分页容器 -->
+          <div id="repliesPagination" class="mt-2"></div>
         </div>
+        <!-- 站内留言 -->
         <div class="tab-pane fade" id="messages">
           <ul class="list-group" id="messageList"></ul>
         </div>
+        <!-- 收藏提问 -->
+        <div class="tab-pane fade" id="myFavorites">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>标题</th>
+                <th>悬赏</th>
+                <th>收藏时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="favoritesTableBody"></tbody>
+          </table>
+        </div>
+        <!-- 个人资料 -->
         <div class="tab-pane fade" id="profile">
           <h5>修改昵称</h5>
           <p>当前昵称：<strong id="currentNickname">加载中...</strong></p>
@@ -159,6 +250,10 @@
         currentPostId = null,
         lastScrollTop = 0,
         actionLock = false;
+      let currentQuestionTab = "unsolved";
+      let unsolvedPage = 1,
+        resolvedPage = 1;
+      const pageSize = 5;
 
       async function withLock(fn) {
         if (actionLock) return;
@@ -210,23 +305,16 @@
         let html = "";
         replies.forEach((r) => {
           if (r.is_best) {
-            html += `<div class="border p-2 mb-2 reply-item" data-reply-id="${r.id}">
-            <strong>${r.nickname}</strong> <span class="badge bg-success">最佳答案</span>
-            <div>${r.content}</div>
-            <small class="text-muted">${new Date(r.created_at).toLocaleString()}</small></div>`;
+            html += `<div class="border p-2 mb-2 reply-item" data-reply-id="${r.id}"><strong>${r.nickname}</strong> <span class="badge bg-success">最佳答案</span><div>${r.content}</div><small class="text-muted">${new Date(r.created_at).toLocaleString()}</small></div>`;
             return;
           }
           const isApproved = r.is_approved_by_owner === 1;
           let btns = isApproved
             ? `<button class="btn btn-sm btn-outline-secondary" onclick="setUnapproved(${postId},${r.id})">取消通过</button>`
-            : `<button class="btn btn-sm btn-success" onclick="approveReply(${postId},${r.id})">通过</button>
-             <button class="btn btn-sm btn-danger" onclick="deleteReply(${postId},${r.id})">删除</button>`;
-          if (isApproved && !hasBest && r.user_id !== currentUserId) {
+            : `<button class="btn btn-sm btn-success" onclick="approveReply(${postId},${r.id})">通过</button> <button class="btn btn-sm btn-danger" onclick="deleteReply(${postId},${r.id})">删除</button>`;
+          if (isApproved && !hasBest && r.user_id !== currentUserId)
             btns += `<button class="btn btn-sm btn-warning" onclick="setBest(${postId},${r.id})">设为最佳</button>`;
-          }
-          html += `<div class="border p-2 mb-2 reply-item" data-reply-id="${r.id}">
-          <strong>${r.nickname}</strong> (${new Date(r.created_at).toLocaleString()}): 
-          <div>${r.content}</div><div class="mt-1">${btns}</div></div>`;
+          html += `<div class="border p-2 mb-2 reply-item" data-reply-id="${r.id}"><strong>${r.nickname}</strong> (${new Date(r.created_at).toLocaleString()}): <div>${r.content}</div><div class="mt-1">${btns}</div></div>`;
         });
         modalBody.innerHTML = html || "暂无留言";
         restoreScrollPosition();
@@ -234,12 +322,15 @@
 
       window.viewReplies = async (postId) => {
         dismissedDots.add(postId);
-        loadQuestions();
         currentPostId = postId;
         await loadRepliesToModal(postId);
-        const modal = getReplyModal();
-        modal.show();
+        getReplyModal().show();
         setTimeout(() => restoreScrollPosition(), 100);
+        // 刷新当前子列表并更新红点
+        if (currentQuestionTab === "unsolved")
+          loadQuestions("unsolved", unsolvedPage);
+        else loadQuestions("resolved", resolvedPage);
+        await updateAllNotificationStates();
       };
 
       async function refreshRepliesAfterAction() {
@@ -247,6 +338,10 @@
         saveScrollPosition();
         await loadRepliesToModal(currentPostId);
         restoreScrollPosition();
+        if (currentQuestionTab === "unsolved")
+          loadQuestions("unsolved", unsolvedPage);
+        else loadQuestions("resolved", resolvedPage);
+        await updateAllNotificationStates();
       }
 
       window.approveReply = (postId, replyId) =>
@@ -257,39 +352,34 @@
           );
           await refreshRepliesAfterAction();
         });
-
       window.deleteReply = (postId, replyId) =>
         withLock(async () => {
-          const confirmed = await ModalAlert.confirm(
+          const ok = await ModalAlert.confirm(
             "确认删除",
             "确定要删除该回复吗？",
           );
-          if (!confirmed) return;
+          if (!ok) return;
           await api(`/api/user/questions/${postId}/replies/${replyId}`, {
             method: "DELETE",
           });
           await refreshRepliesAfterAction();
         });
-
       window.setBest = (postId, replyId) =>
         withLock(async () => {
-          const confirmed = await ModalAlert.confirm(
+          const ok = await ModalAlert.confirm(
             "设为最佳",
             "设为最佳答案后不可更改，确定吗？",
           );
-          if (!confirmed) return;
+          if (!ok) return;
           const res = await api(
             `/api/posts/${postId}/replies/${replyId}/best`,
             { method: "PUT" },
           );
           if (res.code === 200) {
-            ModalAlert.success("已设为最佳答案");
+            ModalAlert.success("已设为最佳并通知对方");
             await refreshRepliesAfterAction();
-          } else {
-            ModalAlert.error(res.msg || "操作失败");
-          }
+          } else ModalAlert.error(res.msg);
         });
-
       window.setUnapproved = (postId, replyId) =>
         withLock(async () => {
           await api(
@@ -299,88 +389,180 @@
           await refreshRepliesAfterAction();
         });
 
-      // 我的提问
-      async function loadQuestions() {
-        const res = await api("/api/user/questions");
+      async function updateAllNotificationStates() {
+        try {
+          const res = await api("/api/user/notification-count");
+          if (res.code === 200) {
+            const { unapproved, unread } = res.data;
+            document
+              .getElementById("myQuestionsTab")
+              .classList.toggle("tab-red-dot", unapproved > 0);
+            document
+              .getElementById("messagesTab")
+              .classList.toggle("tab-red-dot", unread > 0);
+            localStorage.setItem(
+              "hasNotifications",
+              unapproved + unread > 0 ? "true" : "",
+            );
+          }
+        } catch (e) {}
+      }
+
+      // 切换我的提问子选项卡
+      window.switchQuestionTab = (tab) => {
+        currentQuestionTab = tab;
+        document
+          .getElementById("unsolvedBtn")
+          .classList.toggle("active", tab === "unsolved");
+        document
+          .getElementById("resolvedBtn")
+          .classList.toggle("active", tab === "resolved");
+        document.getElementById("unsolvedQuestions").style.display =
+          tab === "unsolved" ? "block" : "none";
+        document.getElementById("resolvedQuestions").style.display =
+          tab === "resolved" ? "block" : "none";
+        if (tab === "unsolved") loadQuestions("unsolved", unsolvedPage);
+        else loadQuestions("resolved", resolvedPage);
+      };
+
+      // 加载提问列表（并更新对应按钮红点）
+      async function loadQuestions(status, page) {
+        const tbodyId =
+          status === "unsolved" ? "unsolvedTableBody" : "resolvedTableBody";
+        const pagId =
+          status === "unsolved" ? "unsolvedPagination" : "resolvedPagination";
+        const isResolved = status === "resolved" ? 1 : 0;
+        const res = await api(
+          `/api/user/questions?is_resolved=${isResolved}&page=${page}&size=${pageSize}`,
+        );
         if (res.code !== 200) return;
-        const tbody = document.getElementById("questionTableBody");
-        tbody.innerHTML = res.data.list
+        const { list, total } = res.data;
+        const tbody = document.getElementById(tbodyId);
+        tbody.innerHTML = list
           .map((q) => {
             const showActions = q.audit_status === 1;
-            const unapprovedCount = q.unapprovedCount || 0;
-            const hasRedDot = unapprovedCount > 0 && !dismissedDots.has(q.id);
-            let actionsHtml = "";
-            if (!showActions)
-              actionsHtml = '<span class="text-muted">审核中...</span>';
-            else
-              actionsHtml = `
-          <button class="btn btn-sm btn-info position-relative" onclick="viewReplies(${q.id})">审核回复 ${hasRedDot ? '<span class="red-dot"></span>' : ""}</button>
-          <a class="btn btn-sm btn-primary" href="/post-detail.html?id=${q.id}" target="_blank">查看</a>`;
+            const hasRedDot =
+              (q.unapprovedCount || 0) > 0 && !dismissedDots.has(q.id);
+            let actionsHtml = showActions
+              ? `<button class="btn btn-sm btn-info position-relative" onclick="viewReplies(${q.id})">审核回复 ${hasRedDot ? '<span class="red-dot"></span>' : ""}</button> <a class="btn btn-sm btn-primary" href="/post-detail.html?id=${q.id}" target="_blank">查看</a>`
+              : '<span class="text-muted">审核中...</span>';
             return `<tr><td>${q.title}</td><td>${q.bounty}</td><td>${new Date(q.created_at).toLocaleString()}</td><td>${actionsHtml}</td></tr>`;
           })
           .join("");
+
+        // 更新当前子选项卡按钮的红点
+        const hasUnreviewed = list.some(
+          (q) => (q.unapprovedCount || 0) > 0 && !dismissedDots.has(q.id),
+        );
+        if (status === "unsolved") {
+          document
+            .getElementById("unsolvedBtn")
+            .classList.toggle("has-dot", hasUnreviewed);
+        } else {
+          document
+            .getElementById("resolvedBtn")
+            .classList.toggle("has-dot", hasUnreviewed);
+        }
+
+        // 分页
+        const totalPages = Math.ceil(total / pageSize);
+        const pag = document.getElementById(pagId);
+        let pagHtml = '<ul class="pagination pagination-sm">';
+        for (let i = 1; i <= totalPages; i++) {
+          pagHtml += `<li class="page-item ${i === page ? "active" : ""}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+        }
+        pagHtml += "</ul>";
+        pag.innerHTML = pagHtml;
+        pag.querySelectorAll("a.page-link").forEach((a) => {
+          a.addEventListener("click", (e) => {
+            e.preventDefault();
+            const p = parseInt(a.dataset.page);
+            if (status === "unsolved") unsolvedPage = p;
+            else resolvedPage = p;
+            loadQuestions(status, p);
+          });
+        });
+        await updateAllNotificationStates();
       }
 
       // 参与回答
-      async function loadReplies() {
+      let repliesPage = 1;
+      const repliesPageSize = 10;
+
+      async function loadReplies(page = 1) {
+        repliesPage = page;
         const tbody = document.getElementById("replyTableBody");
+        const paginationEl = document.getElementById("repliesPagination");
         tbody.innerHTML =
           '<tr><td colspan="4" class="text-center text-muted">加载中...</td></tr>';
         try {
-          console.log("【参与回答】开始请求 /api/user/replies");
-          const res = await api("/api/user/replies");
-          console.log("【参与回答】响应：", res);
+          const res = await api(
+            `/api/user/replies?page=${page}&size=${repliesPageSize}`,
+          );
           if (res.code !== 200) {
             tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">加载失败：${res.msg || "未知错误"}</td></tr>`;
+            paginationEl.innerHTML = "";
             return;
           }
-          const list = res.data;
-          console.log("【参与回答】列表数组：", list);
-          if (!Array.isArray(list)) {
-            tbody.innerHTML =
-              '<tr><td colspan="4" class="text-center text-danger">数据格式错误</td></tr>';
-            return;
-          }
-          if (list.length === 0) {
+          const { list, total, page: currentPage } = res.data;
+          if (!Array.isArray(list) || list.length === 0) {
             tbody.innerHTML =
               '<tr><td colspan="4" class="text-center">暂无回答记录</td></tr>';
+            paginationEl.innerHTML = "";
             return;
           }
+          // 渲染表格行（保持原有渲染逻辑）
           tbody.innerHTML = list
             .map((r) => {
               const contentShort =
-                r.content && r.content.length > 30
+                r.content?.length > 30
                   ? r.content.substring(0, 30) + "..."
-                  : r.content || "(空)";
+                  : r.content || "";
               const titleShort =
-                r.post_title && r.post_title.length > 15
+                r.post_title?.length > 15
                   ? r.post_title.substring(0, 15) + "..."
-                  : r.post_title || "(空)";
+                  : r.post_title || "";
+              const isBest = r.is_best === 1;
+              let actionsHtml = isBest
+                ? '<span class="badge bg-success">最佳答案</span> <a class="btn btn-sm btn-primary" href="/post-detail.html?id=' +
+                  r.post_id +
+                  '" target="_blank">前往帖子</a>'
+                : `<a class="btn btn-sm btn-primary" href="/post-detail.html?id=${r.post_id}" target="_blank">前往帖子</a> <button class="btn btn-sm btn-danger" onclick="deleteOwnReply(${r.post_id},${r.id})">删除</button>`;
               return `<tr>
-            <td><span title="${(r.content || "").replace(/"/g, "&quot;")}">${contentShort}</span></td>
-            <td><span title="${(r.post_title || "").replace(/"/g, "&quot;")}">${titleShort}</span></td>
-            <td>${new Date(r.created_at).toLocaleString()}</td>
-            <td>
-              <a class="btn btn-sm btn-primary" href="/post-detail.html?id=${r.post_id}" target="_blank">前往帖子</a>
-              <button class="btn btn-sm btn-danger" onclick="deleteOwnReply(${r.post_id},${r.id})">删除</button>
-            </td>
-          </tr>`;
+        <td><span title="${(r.content || "").replace(/"/g, "&quot;")}">${contentShort}</span></td>
+        <td><span title="${(r.post_title || "").replace(/"/g, "&quot;")}">${titleShort}</span></td>
+        <td>${new Date(r.created_at).toLocaleString()}</td>
+        <td>${actionsHtml}</td>
+      </tr>`;
             })
             .join("");
-          console.log("【参与回答】渲染完成");
+
+          // 渲染分页
+          const totalPages = Math.ceil(total / repliesPageSize);
+          let pagHtml = '<ul class="pagination pagination-sm">';
+          for (let i = 1; i <= totalPages; i++) {
+            pagHtml += `<li class="page-item ${i === currentPage ? "active" : ""}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+          }
+          pagHtml += "</ul>";
+          paginationEl.innerHTML = pagHtml;
+          paginationEl.querySelectorAll("a.page-link").forEach((a) => {
+            a.addEventListener("click", (e) => {
+              e.preventDefault();
+              loadReplies(parseInt(a.dataset.page));
+            });
+          });
         } catch (err) {
-          console.error("【参与回答】异常：", err);
           tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">异常：${err.message}</td></tr>`;
         }
       }
 
       window.deleteOwnReply = (postId, replyId) =>
         withLock(async () => {
-          const confirmed = await ModalAlert.confirm(
+          const ok = await ModalAlert.confirm(
             "确认删除",
             "确定要删除自己的回答吗？",
           );
-          if (!confirmed) return;
+          if (!ok) return;
           const res = await api(`/api/posts/${postId}/replies/${replyId}`, {
             method: "DELETE",
           });
@@ -395,15 +577,24 @@
         const res = await api("/api/user/messages");
         if (res.code !== 200) return;
         const ul = document.getElementById("messageList");
-        ul.innerHTML = res.data
+        const list = res.data || [];
+        ul.innerHTML = list
           .map(
-            (m) => `<li class="list-group-item">
-        <strong>${m.from_admin || "系统"}</strong>: ${m.content}
-        <small class="text-muted float-end">${new Date(m.created_at).toLocaleString()}</small>
+            (
+              m,
+            ) => `<li class="list-group-item d-flex justify-content-between align-items-center">
+        <div><strong>${m.from_admin || "系统"}</strong>: ${m.content}<br><small class="text-muted">${new Date(m.created_at).toLocaleString()}</small></div>
+        <button class="btn btn-sm btn-outline-success ${m.is_read ? "d-none" : ""}" onclick="markRead(${m.id})">已阅</button>
       </li>`,
           )
           .join("");
+        await updateAllNotificationStates();
       }
+
+      window.markRead = async (msgId) => {
+        await api(`/api/user/messages/${msgId}/read`, { method: "PUT" });
+        await loadMessages();
+      };
 
       // 个人资料
       async function loadProfile() {
@@ -438,38 +629,88 @@
       document
         .getElementById("changePwd")
         .addEventListener("click", async () => {
-          const security_answer = document
-            .getElementById("secAnswer")
-            .value.trim();
-          const new_password = document.getElementById("newPwd").value;
-          if (!security_answer || !new_password)
-            return ModalAlert.error("请完整填写");
+          const secAnswer = document.getElementById("secAnswer").value.trim();
+          const newPwd = document.getElementById("newPwd").value;
+          if (!secAnswer || !newPwd) return ModalAlert.error("请完整填写");
           const res = await api("/api/user/change-password", {
             method: "PUT",
-            body: JSON.stringify({ security_answer, new_password }),
+            body: JSON.stringify({
+              security_answer: secAnswer,
+              new_password: newPwd,
+            }),
           });
           if (res.code === 200) ModalAlert.success("密码已修改");
           else ModalAlert.error(res.msg);
         });
 
-      // 事件委托监听选项卡切换
-      document.querySelector("#userTabs").addEventListener("click", (e) => {
-        const button = e.target.closest('button[data-bs-toggle="tab"]');
-        if (!button) return;
-        const targetId = button.getAttribute("data-bs-target");
-        if (!targetId) return;
-        if (targetId === "#myReplies") {
-          console.log("【选项卡】切换到参与回答");
-          loadReplies();
-        } else if (targetId === "#messages") {
-          loadMessages();
-        } else if (targetId === "#profile") {
-          loadProfile();
+      // 收藏提问
+      async function loadFavorites() {
+        const tbody = document.getElementById("favoritesTableBody");
+        tbody.innerHTML =
+          '<tr><td colspan="4" class="text-center text-muted">加载中...</td></tr>';
+        try {
+          const res = await api("/api/user/favorites");
+          if (res.code !== 200) {
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">加载失败：${res.msg || "未知错误"}</td></tr>`;
+            return;
+          }
+          const list = res.data;
+          if (!Array.isArray(list) || list.length === 0) {
+            tbody.innerHTML =
+              '<tr><td colspan="4" class="text-center">暂无收藏</td></tr>';
+            return;
+          }
+          tbody.innerHTML = list
+            .map(
+              (f) => `
+          <tr>
+            <td><a href="/post-detail.html?id=${f.post_id}" target="_blank">${f.title}</a></td>
+            <td>${f.bounty}</td>
+            <td>${new Date(f.favorited_at).toLocaleString()}</td>
+            <td><button class="btn btn-sm btn-outline-danger" onclick="removeFavorite(${f.post_id})">取消收藏</button></td>
+          </tr>
+        `,
+            )
+            .join("");
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">异常：${err.message}</td></tr>`;
         }
+      }
+
+      window.removeFavorite = async (postId) => {
+        const res = await api(`/api/posts/${postId}/favorite`, {
+          method: "POST",
+        });
+        if (res.code === 200) {
+          ModalAlert.success("已取消收藏");
+          loadFavorites();
+        } else ModalAlert.error(res.msg);
+      };
+
+      // 补充选项卡切换事件，增加 myFavorites
+      document.querySelector("#userTabs").addEventListener("click", (e) => {
+        const btn = e.target.closest('button[data-bs-toggle="tab"]');
+        if (!btn) return;
+        const target = btn.getAttribute("data-bs-target");
+        if (target === "#myReplies") loadReplies(1);
+        else if (target === "#messages") loadMessages();
+        else if (target === "#myFavorites") loadFavorites();
+        else if (target === "#profile") loadProfile();
       });
 
-      // 初始加载提问列表
-      loadQuestions();
+      // 选项卡切换事件委托
+      document.querySelector("#userTabs").addEventListener("click", (e) => {
+        const btn = e.target.closest('button[data-bs-toggle="tab"]');
+        if (!btn) return;
+        const target = btn.getAttribute("data-bs-target");
+        if (target === "#myReplies") loadReplies(1);
+        else if (target === "#messages") loadMessages();
+        else if (target === "#profile") loadProfile();
+      });
+
+      // 初始化：加载待解决与已解决，确保两个按钮红点同时生效
+      loadQuestions("unsolved", 1);
+      loadQuestions("resolved", 1);
     </script>
   </body>
 </html>

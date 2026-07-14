@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>搜索结果 - 问吧</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+      <div class="container">
+        <a class="navbar-brand" href="/">问吧</a>
+        <div class="ms-auto">
+          <a href="/" class="btn btn-outline-light">返回首页</a>
+        </div>
+      </div>
+    </nav>
+    <div class="container mt-3">
+      <!-- 分类栏 + 搜索框 -->
+      <div class="row mb-3">
+        <div class="col-12 d-flex justify-content-between align-items-start">
+          <div class="d-flex flex-wrap" id="categoryBtns"></div>
+          <div class="input-group ms-3" style="max-width: 300px">
+            <input
+              type="text"
+              class="form-control"
+              id="searchKeyword"
+              placeholder="搜索问题，2-8字"
+              minlength="2"
+              maxlength="8"
+            />
+            <button class="btn btn-outline-primary" onclick="searchByKeyword()">
+              搜索
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <h4 id="searchTitle">搜索结果</h4>
+      <div class="list-group" id="postList"></div>
+      <div id="paginationContainer" class="mt-3"></div>
+    </div>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/modal-alert.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+      const urlParams = new URLSearchParams(window.location.search);
+      const query = urlParams.get("q") || "";
+      const catId = urlParams.get("cat") || "";
+      let currentPage = 1;
+      const pageSize = 10;
+
+      // 加载分类按钮
+      async function loadCategories() {
+        const res = await api("/api/public/categories");
+        if (res.code !== 200) return;
+        const tree = res.data;
+        let html = "";
+        tree.forEach((cat) => {
+          html += `<div class="btn-group me-2 mb-2">
+      <button class="btn btn-outline-secondary btn-sm" onclick="filterCategory(${cat.id})">${cat.name}</button>`;
+          if (cat.children && cat.children.length > 0) {
+            html +=
+              '<button class="btn btn-outline-secondary btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown"></button>';
+            html += '<ul class="dropdown-menu">';
+            cat.children.forEach((sub) => {
+              html += `<li><a class="dropdown-item" href="#" onclick="filterCategory(${sub.id})">${sub.name}</a></li>`;
+            });
+            html += "</ul>";
+          }
+          html += "</div>";
+        });
+        document.getElementById("categoryBtns").innerHTML = html;
+      }
+      window.filterCategory = function (catId) {
+        window.location.href = `/search.html?cat=${catId}`;
+      };
+
+      window.searchByKeyword = function () {
+        const keyword = document.getElementById("searchKeyword").value.trim();
+        if (keyword.length < 2 || keyword.length > 8) {
+          ModalAlert.error("请输入2-8个字的搜索关键词");
+          return;
+        }
+        window.location.href = `/search.html?q=${encodeURIComponent(keyword)}`;
+      };
+
+      // 封装安全的请求函数
+      async function safeApi(url) {
+        const token = getToken();
+        const headers = {};
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        try {
+          const res = await fetch(url, { headers });
+          if (!res.ok) throw new Error(`服务器错误 (${res.status})`);
+          const data = await res.json();
+          if (data.code !== 200) throw new Error(data.msg || "未知错误");
+          return data.data;
+        } catch (e) {
+          throw e;
+        }
+      }
+
+      // 加载搜索结果
+      async function loadResults(page = 1) {
+        currentPage = page;
+        const params = new URLSearchParams({ page, size: pageSize });
+        if (query) params.set("q", query);
+        if (catId) params.set("cat", catId);
+
+        const postList = document.getElementById("postList");
+        const titleEl = document.getElementById("searchTitle");
+        postList.innerHTML = '<div class="text-muted">加载中...</div>';
+
+        try {
+          const data = await safeApi(`/api/public/search?${params}`);
+          const { list, total } = data;
+
+          // 设置标题
+          if (query) titleEl.textContent = `搜索“${query}”的结果`;
+          else if (catId) titleEl.textContent = "分类筛选结果";
+          else titleEl.textContent = "搜索结果";
+
+          if (!list || list.length === 0) {
+            postList.innerHTML = '<div class="text-muted">暂无相关内容</div>';
+            return;
+          }
+          postList.innerHTML = list
+            .map(
+              (p) => `
+      <a href="/post-detail.html?id=${p.id}" class="list-group-item list-group-item-action">
+        <strong>${p.title}</strong>
+        <span class="badge bg-warning float-end">${p.bounty}积分</span>
+        <p class="mb-1 text-muted small">${p.nickname} 发布于 ${new Date(p.created_at).toLocaleString()}</p>
+        <p class="mb-0">${p.content?.substring(0, 80) || ""}...</p>
+      </a>
+    `,
+            )
+            .join("");
+
+          // 分页
+          const pag = document.getElementById("paginationContainer");
+          const totalPages = Math.ceil(total / pageSize);
+          let html = '<ul class="pagination pagination-sm">';
+          for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === page ? "active" : ""}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+          }
+          html += "</ul>";
+          pag.innerHTML = html;
+          pag.querySelectorAll("a.page-link").forEach((a) => {
+            a.addEventListener("click", (e) => {
+              e.preventDefault();
+              loadResults(parseInt(a.dataset.page));
+            });
+          });
+        } catch (e) {
+          console.error(e);
+          postList.innerHTML =
+            '<div class="text-danger">加载失败：' + e.message + "</div>";
+        }
+      }
+
+      // 初始化
+      loadCategories();
+      loadResults(1);
+    </script>
+  </body>
+</html>
